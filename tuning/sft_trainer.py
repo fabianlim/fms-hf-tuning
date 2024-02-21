@@ -267,6 +267,14 @@ def train(
         trainer.accelerator.state.fsdp_plugin.auto_wrap_policy = fsdp_auto_wrap_policy(
             model
         )
+    
+    # patch
+    from types import MethodType
+    from contextlib import nullcontext
+    def _patch(self, *models):
+        return nullcontext()
+    trainer.accelerator.accumulate = MethodType(_patch, trainer.accelerator)
+
     trainer.train()
 
 
