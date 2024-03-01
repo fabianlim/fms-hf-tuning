@@ -135,9 +135,9 @@ def train(
        The [2:] here applies if response template has \n prefix, it is needed to strip \n, otherwise template is not found.
        We will create issue to clean this out after we discuss data formats and collators we will support
     """
-    response_template_ids = tokenizer.encode(
-        data_args.response_template, add_special_tokens=False
-    )[2:]
+    # response_template_ids = tokenizer.encode(
+    #     data_args.response_template, add_special_tokens=False
+    # )[2:]
     # TODO: This is actually max_seq_length and not model_max_length. we should not override model_max_length
     # as in current main. We need to change name of this parameter we expose to users.
     model_max_length = min(train_args.model_max_length, tokenizer.model_max_length)
@@ -181,18 +181,46 @@ def train(
         + tokenizer.eos_token
     }
 
-    json_dataset = datasets.load_dataset("json", data_files=data_files)
-    formatted_train_dataset = json_dataset["train"].map(format_dataset)
+    # json_dataset = datasets.load_dataset("json", data_files=data_files)
+    # formatted_train_dataset = json_dataset["train"].map(format_dataset)
+    # logger.info(f"Training dataset length is {len(formatted_train_dataset)}")
+
+    from datasets import load_dataset
+    formatted_train_dataset = load_dataset('bigcode/the-stack-smol', data_dir="data/python", split="train[:10%]")
+    # def _tokenize(example, tokenizer, fields):    
+    #     input_examples = [
+    #         example[_input_key] for _input_key in fields
+    #     ]   
+    #     return tokenizer(
+    #         *input_examples, 
+    #         truncation = True,
+    #     )
+
+    # formatted_train_dataset = formatted_train_dataset.map(
+    #         _tokenize, 
+    #         fn_kwargs={
+    #             'tokenizer': tokenizer, 
+    #             'fields': ['content'],
+    #         }, 
+    #         batched=True,
+    #         remove_columns=list(formatted_train_dataset.column_names),
+    #         num_proc=8,
+    #     )
+
+
     logger.info(f"Training dataset length is {len(formatted_train_dataset)}")
 
-    formatted_validation_dataset = None
-    if data_args.validation_data_path:
-        formatted_validation_dataset = json_dataset["validation"].map(format_dataset)
-        logger.info(f"Validation dataset length is {len(formatted_validation_dataset)}")
 
+    formatted_validation_dataset = None
+    # if data_args.validation_data_path:
+    #     formatted_validation_dataset = json_dataset["validation"].map(format_dataset)
+    #     logger.info(f"Validation dataset length is {len(formatted_validation_dataset)}")
+
+    
     aim_callback = get_aimstack_callback()
     file_logger_callback = FileLoggingCallback(logger)
-    callbacks = [aim_callback, file_logger_callback]
+    # callbacks = [aim_callback, file_logger_callback]
+    callbacks = [file_logger_callback]
 
     if train_args.packing:
         logger.info("Packing is set to True")
@@ -200,11 +228,11 @@ def train(
         packing = True
     else:
         logger.info("Packing is set to False")
-        if data_args.response_template is None:
-            logger.error(
-                "Error, response template is None, needs to be set for training"
-            )
-            exit(-1)
+        # if data_args.response_template is None:
+        #     logger.error(
+        #         "Error, response template is None, needs to be set for training"
+        #     )
+        #     exit(-1)
 
         if data_args.dataset_text_field is None:
             logger.error(
@@ -212,10 +240,17 @@ def train(
             )
             exit(-1)
 
-        data_collator = DataCollatorForCompletionOnlyLM(
-            response_template_ids,
-            tokenizer=tokenizer,
-            ignore_index=configs.IGNORE_INDEX,
+        # data_collator = DataCollatorForCompletionOnlyLM(
+        #     response_template_ids,
+        #     tokenizer=tokenizer,
+        #     ignore_index=configs.IGNORE_INDEX,
+        # )
+        from transformers import DataCollatorForLanguageModeling
+        data_collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer, 
+            mlm=False, # MLM is not supported currently
+            pad_to_multiple_of=8, # convinient for quantization
+            return_tensors='pt'
         )
         packing = False
 
@@ -239,11 +274,11 @@ def train(
         )
     
     # patch
-    from types import MethodType
-    from contextlib import nullcontext
-    def _patch(self, *models):
-        return nullcontext()
-    trainer.accelerator.accumulate = MethodType(_patch, trainer.accelerator)
+    # from types import MethodType
+    # from contextlib import nullcontext
+    # def _patch(self, *models):
+    #     return nullcontext()
+    # trainer.accelerator.accumulate = MethodType(_patch, trainer.accelerator)
 
     trainer.train()
 
