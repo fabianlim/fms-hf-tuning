@@ -135,7 +135,7 @@ def train(
 
     model_loader = AutoModelForCausalLM.from_pretrained
     if framework is not None and framework.requires_custom_loading:
-        model_loader = framework.model_loader
+        model_loader = framework.model_loader # drop-in new loader
 
     task_type = "CAUSAL_LM"
     model = model_loader(
@@ -270,11 +270,8 @@ def train(
         packing = False
 
     if framework is not None and framework.requires_agumentation:
-        # will also take in some other configs that may affect augmentation
-        # e.g., peft, train_args
-        model = framework.augmentation(
-            model, None, # trainer.accelerator,
-            train_args, peft_config
+        model, (peft_config,) = framework.augmentation(
+            model, train_args, modifiable_args=(peft_config,)
         )
 
     trainer = SFTTrainer(
@@ -288,7 +285,7 @@ def train(
         args=train_args,
         max_seq_length=max_seq_length,
         # callbacks=callbacks,
-        # peft_config=peft_config,
+        peft_config=peft_config,
     )
 
     if trainer.is_fsdp_enabled and peft_config is not None:
