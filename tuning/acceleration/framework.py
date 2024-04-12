@@ -48,9 +48,11 @@ class AccelerationFramework:
         LoraModel._create_new_module = staticmethod(_create_new_module_triton)
         GPTQLoraModel._replace_module = MethodType(_replace_module, GPTQLoraModel)
 
+        torch_dtype = kwargs.get('torch_dtype', torch.float32)
 
         return AutoGPTQForCausalLM.from_quantized(
             model_name, quantize_config = quantize_config,
+            torch_dtype=torch_dtype,
             use_marlin = False,
             disable_exllama = True,
             # warmup_triton = True,
@@ -77,7 +79,7 @@ class AccelerationFramework:
         assert peft_config is not None, "need peft_config to install PEFT adapters"
 
         # FIXME: handle this more properly. Need to check if torch_dtype was specified as fp16 also
-        assert train_args.fp16, "need to run in fp16 mixed precision or load model in fp16"
+        # assert train_args.fp16, "need to run in fp16 mixed precision or load model in fp16"
 
         # this is a hack to enter the enable_grads part of the code in 
         # prepare_model_for_kbit_training below
