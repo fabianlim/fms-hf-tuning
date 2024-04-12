@@ -43,6 +43,7 @@ from tuning.trainercontroller import TrainerControllerCallback
 from tuning.utils.config_utils import get_hf_peft_config
 from tuning.utils.data_type_utils import get_torch_dtype
 from tuning.utils.import_utils import is_aim_available
+from tuning.acceleration import AccelerationFramework
 
 if is_aim_available():
     # Local
@@ -118,6 +119,10 @@ def train(
 
     logger = logging.get_logger("sft_trainer")
 
+    framework = None
+    # TODO: check if the framework config is passed in
+    framework = AccelerationFramework()
+
     # Validate parameters
     if (not isinstance(train_args.num_train_epochs, (float, int))) or (
         train_args.num_train_epochs <= 0
@@ -128,8 +133,12 @@ def train(
     ):
         raise ValueError("gradient_accumulation_steps has to be an integer >= 1")
 
+    model_loader = AutoModelForCausalLM.from_pretrained
+    if framework is not None and framework.requires_custom_loading:
+        model_loader = framework.model_loader
+
     task_type = "CAUSAL_LM"
-    model = AutoModelForCausalLM.from_pretrained(
+    model = model_loader(
         model_args.model_name_or_path,
         cache_dir=train_args.cache_dir,
         torch_dtype=get_torch_dtype(model_args.torch_dtype),
@@ -260,6 +269,14 @@ def train(
         )
         packing = False
 
+    if framework is not None and framework.requires_agumentation:
+        # will also take in some other configs that may affect augmentation
+        # e.g., peft, train_args
+        model = framework.augmentation(
+            model, None, # trainer.accelerator,
+            train_args, peft_config
+        )
+
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
@@ -270,8 +287,8 @@ def train(
         dataset_text_field=data_args.dataset_text_field,
         args=train_args,
         max_seq_length=max_seq_length,
-        callbacks=callbacks,
-        peft_config=peft_config,
+        # callbacks=callbacks,
+        # peft_config=peft_config,
     )
 
     if trainer.is_fsdp_enabled and peft_config is not None:
