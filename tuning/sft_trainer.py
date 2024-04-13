@@ -101,7 +101,8 @@ def train(
     peft_config: Optional[  # pylint: disable=redefined-outer-name
         Union[peft_config.LoraConfig, peft_config.PromptTuningConfig]
     ] = None,
-    trainer_controller_args: configs.TrainerControllerArguments = None,
+    trainer_controller_args: Optional[configs.TrainerControllerArguments] = None,
+    acceleration_framework_args: Optional[configs.AccelerationFrameworkArguments] = None,
 ):
     """Call the SFTTrainer
 
@@ -115,13 +116,17 @@ def train(
             The peft configuration to pass to trainer
         trainer_control_args: configs.TrainerControllerArguments \
             for controlling the training loop using policy rules
+        acceleration_framework_args: configs.AccelerationFrameworkArguments \
+            for controlling acceleration framework
     """
 
     logger = logging.get_logger("sft_trainer")
 
     framework = None
-    # TODO: check if the framework config is passed in
-    framework = AccelerationFramework()
+    if acceleration_framework_args is not None:
+        framework = AccelerationFramework(
+            acceleration_framework_args.acceleration_framework_config_file
+        )
 
     # Validate parameters
     if (not isinstance(train_args.num_train_epochs, (float, int))) or (
@@ -302,6 +307,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
             configs.DataArguments,
             configs.TrainingArguments,
             configs.TrainerControllerArguments,
+            configs.AccelerationFrameworkArguments,
             peft_config.LoraConfig,
             peft_config.PromptTuningConfig,
         )
@@ -317,6 +323,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
         data_args,
         training_args,
         trainer_controller_args,
+        acceleration_framework_args,
         lora_config,
         prompt_tuning_config,
         peft_method,
@@ -328,7 +335,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
         tune_config = prompt_tuning_config
     else:
         tune_config = None
-    train(model_args, data_args, training_args, tune_config, trainer_controller_args)
+    train(model_args, data_args, training_args, tune_config, trainer_controller_args, acceleration_framework_args)
 
 
 if __name__ == "__main__":
