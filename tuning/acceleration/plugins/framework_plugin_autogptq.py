@@ -55,11 +55,15 @@ class AutoGPTQAccelerationPlugin(AccelerationPlugin):
     configuration_keys = ['peft']
     require_packages = ['auto_gptq']
 
-    def __init__(self, configurations: List[Dict]):
+    def __init__(self, configurations: Dict[str, Dict]):
+        super().__init__(configurations)
 
-        # Currently we only support the triton_v2 kernel, so there is nothing
-        # much else to configure
-        pass
+        # just do checking, nothing must to configure at this point
+        # if need to configure then do something like this:
+        # self.kernel = self._get_config_value("peft.kernel")
+        self._check_config_equal(key="peft.quantization", value="auto_gptq")
+        self._check_config_equal(key="peft.kernel", value="triton_v2")
+        self._check_config_equal(key="peft.from_quantized", value=True)
 
     def model_loader(self, model_name: str, **kwargs):
 

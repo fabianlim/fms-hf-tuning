@@ -9,7 +9,7 @@ from peft import LoraConfig
 
 KEY_PLUGINS = 'plugins'
 
-from .plugins import AccelerationPlugin, INSTALLED_PLUGINS_CLASSES
+from .plugins import AccelerationPlugin, INSTALLED_PLUGINS_CLASSES, AccelerationPluginInitError
 
 def check_plugin_packages(plugin: AccelerationPlugin):
     if plugin.require_packages is None:
@@ -41,15 +41,20 @@ class AccelerationFramework:
             if len(selected_configs) > 0:
                 # get the plugin
                 plugin_name = str(cls.__name__)
-                plugin = cls(selected_configs)
+                try:
+                    plugin = cls(selected_configs)
 
-                # check plugin
-                check_plugin_packages(plugin)
+                    # check plugin
+                    check_plugin_packages(plugin)
 
-                # install plugin
-                self.active_plugins[plugin_name] = plugin
-                if plugin.requires_custom_loading:
-                    self.plugins_require_custom_loading.append(plugin_name)
+                    # install plugin
+                    self.active_plugins[plugin_name] = plugin
+                    if plugin.requires_custom_loading:
+                        self.plugins_require_custom_loading.append(plugin_name)
+                except AccelerationPluginInitError:
+                    # this means the configuration is not appropriate, move on
+                    # not going to surface the message
+                    pass
 
         if len(self.active_plugins) == 0:
             raise ValueError(f"plugins must be selected from \'{[x.__name__ for x in INSTALLED_PLUGINS_CLASSES]}\'")
