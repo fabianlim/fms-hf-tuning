@@ -1,0 +1,5 @@
+plugins:
+  peft:
+    quantization: auto_gptq
+    kernel: triton_v2
+    from_quantized: True
