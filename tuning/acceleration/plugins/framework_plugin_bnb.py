@@ -10,28 +10,19 @@ from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model
 
 from typing import Dict, Tuple
 
-from tuning.acceleration.plugins.framework_plugin import AccelerationPlugin
+from .framework_plugin import AccelerationPlugin
 
 import torch
 import inspect, warnings
 
+# this is a modified copy of the function from peft.utils.other, that we 
+# will instead use 
+# - in the original version, all non-INIT8 params (e.g., fp16, bf16) are upcast
+#   to full precision.
+# - this will cause problems in the LoraLayers, because the activations will then
+#   be constantly downcasted, resulting in greatly reduced throughput.
 def _prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, gradient_checkpointing_kwargs=None):
-    r"""
-    Note this method only works for `transformers` models.
 
-    Args:
-        model (`transformers.PreTrainedModel`):
-            The loaded model from `transformers`
-        use_gradient_checkpointing (`bool`, *optional*, defaults to `True`):
-            If True, use gradient checkpointing to save memory at the expense of slower backward pass.
-        gradient_checkpointing_kwargs (`dict`, *optional*, defaults to `None`):
-            Keyword arguments to pass to the gradient checkpointing function, please refer to the documentation of
-            `torch.utils.checkpoint.checkpoint` for more details about the arguments that you can pass to that method.
-            Note this is only available in the latest transformers versions (> 4.34.1).
-    """
-    loaded_in_kbit = getattr(model, "is_loaded_in_8bit", False) or getattr(model, "is_loaded_in_4bit", False)
-    is_gptq_quantized = getattr(model, "quantization_method", None) == "gptq"
-    is_aqlm_quantized = getattr(model, "quantization_method", None) == "aqlm"
     if gradient_checkpointing_kwargs is None:
         gradient_checkpointing_kwargs = {}
 
@@ -39,7 +30,7 @@ def _prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, gra
         # freeze base model's layers
         param.requires_grad = False
 
-    if (loaded_in_kbit or is_gptq_quantized or is_aqlm_quantized) and use_gradient_checkpointing:
+    if use_gradient_checkpointing:
         # When having `use_reentrant=False` + gradient_checkpointing, there is no need for this hack
         if "use_reentrant" not in gradient_checkpointing_kwargs or gradient_checkpointing_kwargs["use_reentrant"]:
             # For backward compatibility
@@ -75,17 +66,15 @@ def _prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, gra
 
 class BNBAccelerationPlugin(AccelerationPlugin):
     
-    configuration_keys = ['peft']
     require_packages = ['bitsandbytes']
 
     def __init__(self, configurations: Dict[str, Dict]):
         super().__init__(configurations)
 
-        # just do checking, nothing must to configure at this point
-        # if need to configure then do something like this:
-        self._check_config_equal(key="peft.quantization", value="bitsandbytes")
-        self._check_config_in_values(key="peft.quant_type", values=["fp4", "nf4"])
-        self._quant_type = self._get_config_value(key="peft.quant_type")
+        self._quant_type = self._check_config_in_values(
+            key="peft.quantization.bitsandbytes.quant_type", 
+            values=["fp4", "nf4"]
+        )
 
     def model_loader(self, model_name: str, **kwargs):
 
@@ -140,3 +129,9 @@ class BNBAccelerationPlugin(AccelerationPlugin):
         model = get_peft_model(model, peft_config)
         modifiable_args = (None, ) # return a None
         return model, modifiable_args
+
+# register
+AccelerationPlugin.register_plugin(
+    BNBAccelerationPlugin,
+    configuration_and_paths=["peft.quantization.bitsandbytes"], 
+)

@@ -1,4 +1,3 @@
-import torch
 
 import yaml
 from typing import Optional, List, Dict, Tuple
@@ -7,9 +6,10 @@ from transformers import TrainingArguments, PreTrainedModel
 from transformers.utils.import_utils import _is_package_available
 from peft import LoraConfig
 
-KEY_PLUGINS = 'plugins'
-
-from .plugins import AccelerationPlugin, INSTALLED_PLUGINS_CLASSES, AccelerationPluginInitError
+from .plugins import (
+    get_relevant_configuration_sections, 
+    AccelerationPlugin,
+)
 
 def check_plugin_packages(plugin: AccelerationPlugin):
     if plugin.require_packages is None:
@@ -17,6 +17,8 @@ def check_plugin_packages(plugin: AccelerationPlugin):
 
     for package_name in plugin.require_packages:
         _is_package_available(package_name)
+
+KEY_PLUGINS = 'plugins'
 
 class AccelerationFramework:
 
@@ -31,33 +33,23 @@ class AccelerationFramework:
         # pepare the plugin configurations
         plugin_configs = { k:v for k,v in contents[KEY_PLUGINS].items() }
 
-        for cls in INSTALLED_PLUGINS_CLASSES:
-            selected_configs = {
-                k: plugin_configs[k]
-                for k in cls.configuration_keys if k in plugin_configs
-            }
+        for selected_configs, cls in get_relevant_configuration_sections(plugin_configs):
 
             # then the model is to be installed
-            if len(selected_configs) > 0:
-                # get the plugin
-                plugin_name = str(cls.__name__)
-                try:
-                    plugin = cls(selected_configs)
+            # get the plugin
+            plugin_name = str(cls.__name__)
+            plugin = cls(selected_configs)
 
-                    # check plugin
-                    check_plugin_packages(plugin)
+            # check plugin
+            check_plugin_packages(plugin)
 
-                    # install plugin
-                    self.active_plugins[plugin_name] = plugin
-                    if plugin.requires_custom_loading:
-                        self.plugins_require_custom_loading.append(plugin_name)
-                except AccelerationPluginInitError:
-                    # this means the configuration is not appropriate, move on
-                    # not going to surface the message
-                    pass
+            # install plugin
+            self.active_plugins[plugin_name] = plugin
+            if plugin.requires_custom_loading:
+                self.plugins_require_custom_loading.append(plugin_name)
 
         if len(self.active_plugins) == 0:
-            raise ValueError(f"plugins must be selected from \'{[x.__name__ for x in INSTALLED_PLUGINS_CLASSES]}\'")
+            raise ValueError(f"no plugins could be configured")
 
         assert len(self.plugins_require_custom_loading) <= 1, \
             f"can load at most 1 plugin with custom model loading, but have \'{self.plugins_require_custom_loading}\'"

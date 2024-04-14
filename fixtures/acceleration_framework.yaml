@@ -1,5 +1,16 @@
 plugins:
+
+  # PEFT-related acceleration
   peft:
-    quantization: auto_gptq
-    kernel: triton_v2
-    from_quantized: True
+
+    # quantization
+    quantization: 
+
+      # Q-LORA using autogptq
+      auto_gptq:
+        kernel: triton_v2
+        from_quantized: True
+
+      # Q-LORA using BNB
+      # bitsandbytes:
+      #   quant_type: nf4 # fp4 

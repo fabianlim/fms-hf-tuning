@@ -18,7 +18,7 @@ from peft.tuners.lora.model import LoraModel
 
 from typing import Tuple, List, Dict
 
-from tuning.acceleration.plugins.framework_plugin import AccelerationPlugin
+from .framework_plugin import AccelerationPlugin
 
 import torch
 
@@ -52,7 +52,6 @@ def _create_new_module_triton(
 
 class AutoGPTQAccelerationPlugin(AccelerationPlugin):
     
-    configuration_keys = ['peft']
     require_packages = ['auto_gptq']
 
     def __init__(self, configurations: Dict[str, Dict]):
@@ -62,8 +61,8 @@ class AutoGPTQAccelerationPlugin(AccelerationPlugin):
         # if need to configure then do something like this:
         # self.kernel = self._get_config_value("peft.kernel")
         self._check_config_equal(key="peft.quantization", value="auto_gptq")
-        self._check_config_equal(key="peft.kernel", value="triton_v2")
-        self._check_config_equal(key="peft.from_quantized", value=True)
+        self._check_config_equal(key="peft.quantization.auto_gptq.kernel", value="triton_v2")
+        self._check_config_equal(key="peft.quantization.auto_gptq.from_quantized", value=True)
 
     def model_loader(self, model_name: str, **kwargs):
 
@@ -181,3 +180,9 @@ class AutoGPTQAccelerationPlugin(AccelerationPlugin):
         GPTQLoraModel._replace_module = MethodType(_old_replace_module, GPTQLoraModel)
 
         return model, modifiable_args
+
+# register
+AccelerationPlugin.register_plugin(
+    AutoGPTQAccelerationPlugin,
+    configuration_and_paths=["peft.quantization.auto_gptq"], 
+)
