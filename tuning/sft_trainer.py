@@ -93,6 +93,32 @@ class FileLoggingCallback(TrainerCallback):
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(f"{json.dumps(log_obj, sort_keys=True)}\n")
 
+RESPONSE_TEMPLATE = "### Response:"
+INSTRUCTION_TEMPLATE = "### Instruction:"
+
+PROMPT_DICT = {
+    "prompt_input": (
+        "Below is an instruction that describes a task, paired with an input that provides further context. "
+        "Write a response that appropriately completes the request.\n\n"
+        "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n\n"
+    ),
+    "prompt_no_input": (
+        "Below is an instruction that describes a task. "
+        "Write a response that appropriately completes the request.\n\n"
+        "### Instruction:\n{instruction}\n\n### Response:\n\n"
+    ),
+}
+
+def formatting_prompts_func(example):
+    output_texts = []
+    if example.get("input", "") == "":
+        prompt = PROMPT_DICT["prompt_no_input"].format_map(example)
+    else:
+        prompt = PROMPT_DICT["prompt_input"].format_map(example)
+    new_example = prompt + example["output"]
+    return new_example
+
+
 
 def train(
     model_args: configs.ModelArguments,
@@ -123,7 +149,7 @@ def train(
     logger = logging.get_logger("sft_trainer")
 
     framework = None
-    if acceleration_framework_args is not None:
+    if acceleration_framework_args.acceleration_framework_config_file is not None:
         framework = AccelerationFramework(
             acceleration_framework_args.acceleration_framework_config_file
         )
@@ -226,16 +252,20 @@ def train(
         + tokenizer.eos_token
     }
 
-    json_dataset = datasets.load_dataset("json", data_files=data_files)
-    formatted_train_dataset = json_dataset["train"].map(format_dataset)
+    from datasets import load_dataset
+
+    # json_dataset = datasets.load_dataset("json", data_files=data_files)
+    # formatted_train_dataset = json_dataset["train"].map(format_dataset)
+    formatted_train_dataset = load_dataset("yahma/alpaca-cleaned", split="train")
+
     logger.info("Training dataset length is %s", len(formatted_train_dataset))
 
     formatted_validation_dataset = None
-    if data_args.validation_data_path:
-        formatted_validation_dataset = json_dataset["validation"].map(format_dataset)
-        logger.info(
-            "Validation dataset length is %s", len(formatted_validation_dataset)
-        )
+    # if data_args.validation_data_path:
+    #     formatted_validation_dataset = json_dataset["validation"].map(format_dataset)
+    #     logger.info(
+    #         "Validation dataset length is %s", len(formatted_validation_dataset)
+    #     )
 
     callbacks = [FileLoggingCallback(logger)]
     if is_aim_available():
@@ -284,9 +314,11 @@ def train(
         tokenizer=tokenizer,
         train_dataset=formatted_train_dataset,
         eval_dataset=formatted_validation_dataset,
-        packing=packing,
-        data_collator=data_collator,
-        dataset_text_field=data_args.dataset_text_field,
+        # packing=packing,
+        packing=True,
+        # data_collator=data_collator,
+        # dataset_text_field=data_args.dataset_text_field,
+        formatting_func=formatting_prompts_func,
         args=train_args,
         max_seq_length=max_seq_length,
         # callbacks=callbacks,
