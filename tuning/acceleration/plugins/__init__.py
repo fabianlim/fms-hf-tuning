@@ -3,3 +3,4 @@ from .framework_plugin import AccelerationPlugin, get_relevant_configuration_sec
 # can this be automated?
 from .framework_plugin_autogptq import AutoGPTQForCausalLM
 from .framework_plugin_bnb import BNBAccelerationPlugin
+from .framework_plugin_unsloth_autogptq import UnslothAutoGPTQAccelerationPlugin
