@@ -90,12 +90,9 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
 
         # some assertions
         assert peft_config is not None, "need peft_config to install PEFT adapters"
+        assert peft_config.lora_dropout == 0, "Unsloth Fused Attention requires lora_dropout argument to be set to 0"
         assert model.dtype == torch.float16 or train_args.fp16,\
              "need to run in fp16 mixed precision or load model in fp16"
-        peft_kwargs = peft_config.to_dict()
-        assert peft_kwargs['lora_dropout'] == 0, "Unsloth Fused Attention requires lora_dropout argument to be set to 0"
-
-        peft_kwargs.pop('task_type')
 
         # These functions need to replaced due to some incompatibliites 
         # with newer PEFT packages.
@@ -133,7 +130,7 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
         model = _lib.get_peft_model(
             model,
             use_gradient_checkpointing=train_args.gradient_checkpointing,
-            **peft_kwargs,
+            func(**{k:v for k,v in peft_config.to_dict() if k != 'task_type'}),
         )
         modifiable_args = (None, ) # return a None for peft_config
 
