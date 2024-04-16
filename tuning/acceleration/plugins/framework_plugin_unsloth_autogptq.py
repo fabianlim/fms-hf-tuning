@@ -58,6 +58,9 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
         )
 
         # 2. Depending on the model, replace appropriate CUDA kernel with TritonV2 kernel 
+        # - `FastLanguageModel` above will load a "default" cuda linear kernel. 
+        # - the idea is to load the appropriate "default" kernel (for each model), then follow up with an injection
+        #.  via the `inject_to_model(..., target_module_type=DefaultKernel)` method.
         if model.config.model_type == 'mixtral':
             from auto_gptq.nn_modules.qlinear.qlinear_cuda_old import (
                 QuantLinear as QuantLinearCuda,
