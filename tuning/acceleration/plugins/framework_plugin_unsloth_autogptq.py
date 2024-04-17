@@ -54,7 +54,7 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
 
     def model_loader(self, model_name: str, **kwargs):
         # 1. Load the gptq base model through unsloth FastLanguageModel
-        torch_dtype = kwargs.get('torch_dtype', torch.float16)
+        torch_dtype = kwargs.get('torch_dtype', torch.float32)
         model, _ = FastLanguageModel.from_pretrained(
                 model_name,
                 dtype=torch_dtype,
