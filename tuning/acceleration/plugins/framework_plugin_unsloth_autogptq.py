@@ -1,6 +1,4 @@
 
-def parse_configuration():
-    pass
 
 import torch
 from transformers import TrainingArguments
