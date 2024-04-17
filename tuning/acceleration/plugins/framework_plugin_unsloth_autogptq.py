@@ -40,8 +40,7 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
     restricted_model_archs = ['MixtralForCausalLM', 'LlamaForCausalLM', 'MistralForCausalLM', 'GemmaForCausalLM']
 
     '''
-    NOTE:
-    Unsloth's OSS license allows for up to 4 GPUs, will require a commercial license for larger resources
+    NOTE: unloth's LICENSE file looks like a standar Apache 2.0, but in various parts of the code, it claims to require a commercial license if used to run on more than 4 GPUs, see 
     https://github.com/unslothai/unsloth/blob/d215fd902cf28feb8abcfde2d25281d0fbf9d28c/unsloth/models/llama.py#L1140-L1143
     '''
 
