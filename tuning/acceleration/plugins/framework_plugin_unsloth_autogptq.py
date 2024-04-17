@@ -36,8 +36,14 @@ def _create_new_module_triton(
 
 class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
     
-    require_packages = ['auto_gptq', 'unsloth']
+    require_packages = ['auto_gptq', 'unsloth', 'optimum']
     restricted_model_archs = ['MixtralForCausalLM', 'LlamaForCausalLM', 'MistralForCausalLM', 'GemmaForCausalLM']
+
+    '''
+    NOTE:
+    Unsloth's OSS license allows for up to 4 GPUs, will require a commercial license for larger resources
+    https://github.com/unslothai/unsloth/blob/d215fd902cf28feb8abcfde2d25281d0fbf9d28c/unsloth/models/llama.py#L1140-L1143
+    '''
 
     def __init__(self, configurations: Dict[str, Dict]):
         super().__init__(configurations)
@@ -51,11 +57,13 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
 
     def model_loader(self, model_name: str, **kwargs):
         # 1. Load the gptq base model through unsloth FastLanguageModel
+        torch_dtype = kwargs.get('torch_dtype', torch.float16)
         model, _ = FastLanguageModel.from_pretrained(
-            model_name,
-            quantization_method=QuantizationMethod.GPTQ,
-            device_map="auto",
-        )
+                model_name,
+                dtype=torch_dtype,
+                device_map="auto",
+                quantization_method=QuantizationMethod.GPTQ,
+            )
 
         # 2. Depending on the model, replace appropriate CUDA kernel with TritonV2 kernel 
         # - `FastLanguageModel` above will load a "default" cuda linear kernel. 
@@ -133,7 +141,7 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
         model = _lib.get_peft_model(
             model,
             use_gradient_checkpointing=train_args.gradient_checkpointing,
-            func(**{k:v for k,v in peft_config.to_dict() if k != 'task_type'}),
+            **{k:v for k,v in peft_config.to_dict().items() if k != 'task_type'},
         )
         modifiable_args = (None, ) # return a None for peft_config
 
