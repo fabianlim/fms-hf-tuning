@@ -58,7 +58,6 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
         model, _ = FastLanguageModel.from_pretrained(
                 model_name,
                 dtype=torch_dtype,
-                device_map="auto",
                 quantization_method=QuantizationMethod.GPTQ,
             )
 
