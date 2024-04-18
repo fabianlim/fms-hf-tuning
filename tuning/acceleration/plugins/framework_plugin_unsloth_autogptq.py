@@ -9,6 +9,7 @@ from types import MethodType
 from typing import Tuple, Dict
 
 from .framework_plugin import AccelerationPlugin
+from functools import partial
 
 class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
     
@@ -78,8 +79,9 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
     ):
         # gaurded
         from unsloth import FastLanguageModel
+        from unsloth.gptq.triton.layers import GPTQuantLinear
         from auto_gptq.utils.peft_utils import GPTQLoraModel
-        from ..plugin_utils.autogptq_utils import _create_new_module_triton, _replace_module
+        from ..plugin_utils.autogptq_utils import create_new_module_peft, replace_module_peft
 
         peft_config, = modifiable_args # unpack modifiable args
 
@@ -111,8 +113,9 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
 
         _old_create_new_module = LoraModel
         _old_replace_module = GPTQLoraModel._replace_module
-        LoraModel._create_new_module = staticmethod(_create_new_module_triton)
-        GPTQLoraModel._replace_module = MethodType(_replace_module, GPTQLoraModel)
+        _create_new_module = partial(create_new_module_peft, target_cls=GPTQuantLinear)
+        LoraModel._create_new_module = staticmethod(_create_new_module)
+        GPTQLoraModel._replace_module = MethodType(replace_module_peft, GPTQLoraModel)
 
         # In the unsloth implementation, the prepare_model_for_kbit_training get_peft_model is called 
         # inside `FastLanguageModel.get_peft_model`

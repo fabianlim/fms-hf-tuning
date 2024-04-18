@@ -11,6 +11,7 @@ from typing import Tuple, Dict
 
 from .framework_plugin import AccelerationPlugin
 
+from functools import partial
 import torch
 
 class AutoGPTQAccelerationPlugin(AccelerationPlugin):
@@ -96,7 +97,8 @@ class AutoGPTQAccelerationPlugin(AccelerationPlugin):
         # guarded imports
         from auto_gptq.utils.peft_utils import get_gptq_peft_model
         from auto_gptq.utils.peft_utils import GPTQLoraModel
-        from ..plugin_utils.autogptq_utils import _create_new_module_triton, _replace_module
+        from auto_gptq.nn_modules.qlinear.qlinear_tritonv2 import QuantLinear
+        from ..plugin_utils.autogptq_utils import create_new_module_peft, replace_module_peft
 
         peft_config, = modifiable_args # unpack modifiable args
 
@@ -134,8 +136,9 @@ class AutoGPTQAccelerationPlugin(AccelerationPlugin):
 
         _old_create_new_module = LoraModel
         _old_replace_module = GPTQLoraModel._replace_module
-        LoraModel._create_new_module = staticmethod(_create_new_module_triton)
-        GPTQLoraModel._replace_module = MethodType(_replace_module, GPTQLoraModel)
+        _create_new_module = partial(create_new_module_peft, target_cls=QuantLinear)
+        LoraModel._create_new_module = staticmethod(_create_new_module)
+        GPTQLoraModel._replace_module = MethodType(replace_module_peft, GPTQLoraModel)
 
         # Install GPTQ adapters using the AutoGPTQ package (with the above patches)
         model = get_gptq_peft_model(
