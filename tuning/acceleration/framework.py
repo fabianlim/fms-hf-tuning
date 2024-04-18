@@ -52,12 +52,15 @@ class AccelerationFramework:
             raise ValueError(f"no plugins could be configured")
 
         assert len(self.plugins_require_custom_loading) <= 1, \
-            f"can load at most 1 plugin with custom model loading, but have \'{self.plugins_require_custom_loading}\'"
+            f"can load at most 1 plugin with custom model loading, but tried to \'{self.plugins_require_custom_loading}\'."
 
     def model_loader(self, model_name: str, **kwargs):
 
         if len(self.plugins_require_custom_loading) == 0:
-            raise NotImplementedError("None of the loaded plugins")
+            raise NotImplementedError(
+                f"Attempted modeling loading, but none of activated plugins \'{list(self.active_plugins.keys())}\' "
+                "require custom loading."
+            )
 
         # otherwise there should be exactly 1
         plugin_name = self.plugins_require_custom_loading[0]
@@ -80,7 +83,7 @@ class AccelerationFramework:
                 not any([x in model_archs for x in plugin.restricted_model_archs])
             ):
                 raise ValueError(
-                    f'model archs \'{model_archs}\' not supported for \'{plugin_name}\''
+                    f'Model architectures in \'{model_archs}\' are supported for \'{plugin_name}\'.'
                 )
 
             if plugin.requires_agumentation:

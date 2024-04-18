@@ -103,13 +103,13 @@ class AccelerationPlugin:
                 # if the tree is a dict
                 if len(t.keys()) > 1:
                     raise AccelerationPluginConfigError(
-                        f"\'{key}\' found but ambiguous \'{t.keys()}\' to check in values \'{values}\'"
+                        f"{self.__class__.__name__}: \'{key}\' found but amongst multiple \'{t.keys()}\' exist. Ambiguous check in expected set \'{values}\'."
                     )
                 t = list(t.keys())[0] # otherwise take the first value
 
             if t not in values:
                 raise AccelerationPluginConfigError(
-                    f"\'{key}\'=\'{t}\', not found in \'{values}\'"
+                    f"{self.__class__.__name__}: Value at \'{key}\' was \'{t}\'. Not found in expected set \'{values}\'."
                 )
 
         if t is None:
