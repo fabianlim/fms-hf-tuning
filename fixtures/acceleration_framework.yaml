@@ -5,11 +5,15 @@ plugins:
 
     # quantization
     quantization: 
+      # Include unsloth optimizations
+      unsloth:
+        base_layer:  auto_gptq
+        kernel: triton_v2
 
       # Q-LORA using autogptq
-      auto_gptq:
-        kernel: triton_v2
-        from_quantized: True
+      # auto_gptq:
+      #   kernel: triton_v2
+      #   from_quantized: True
 
       # Q-LORA using BNB
       # bitsandbytes:
