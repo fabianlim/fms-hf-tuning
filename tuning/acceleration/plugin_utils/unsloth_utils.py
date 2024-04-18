@@ -1,18 +1,6 @@
 from types import MethodType
 from transformers.utils.import_utils import _is_package_available
 
-# Mock the xformers.attn_bias if not installed
-# try:
-#     import xformers
-# except ImportError:
-#     import sys
-#     from types import ModuleType
-#     class BlockDiagonalCausalMask:
-#         pass
-#     m = ModuleType("attn_bias")
-#     m.BlockDiagonalCausalMask = BlockDiagonalCausalMask
-#     sys.modules['xformers'] = m
-
 from peft.peft_model import PeftModelForCausalLM
 
 has_xformers = _is_package_available("xformers")

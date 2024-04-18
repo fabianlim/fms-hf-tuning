@@ -4,33 +4,11 @@ import torch
 from transformers import TrainingArguments
 from peft import LoraConfig
 from peft.tuners.lora.model import LoraModel
-from auto_gptq.utils.peft_utils import GPTQLoraModel
-from unsloth import FastLanguageModel
-from unsloth.utils.modeling import QuantizationMethod
-from unsloth.gptq.triton.layers import GPTQuantLinear
 
 from types import MethodType
-from typing import Tuple, List, Dict
+from typing import Tuple, Dict
 
 from .framework_plugin import AccelerationPlugin
-from .framework_plugin_autogptq import _replace_module, LoraLinearGPTQ
-
-# def _dispatch_lora_linear_for_gptq(
-def _create_new_module_triton(
-    lora_config: LoraConfig,
-    adapter_name: str,
-    target: torch.nn.Module,
-    **kwargs,
-):
-    # if the base layer module matches a supported class, dispatch the lora linear
-    # to be installed
-    new_module = target
-    if (
-        isinstance(target, GPTQuantLinear)
-    ):
-        new_module = LoraLinearGPTQ(target, adapter_name, **kwargs)
-    # if module cannot be found, return None which results in a raise in the call-stack
-    return new_module
 
 class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
     
@@ -53,6 +31,11 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
         self._check_config_equal(key="peft.quantization.unsloth.kernel", value="triton_v2")
 
     def model_loader(self, model_name: str, **kwargs):
+        # guarded imports
+        from unsloth import FastLanguageModel
+        from unsloth.utils.modeling import QuantizationMethod
+        from unsloth.gptq.triton.layers import GPTQuantLinear
+
         # 1. Load the gptq base model through unsloth FastLanguageModel
         torch_dtype = kwargs.get('torch_dtype', torch.float32)
         model, _ = FastLanguageModel.from_pretrained(
@@ -93,6 +76,11 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
         train_args: TrainingArguments,
         modifiable_args: Tuple[LoraConfig],
     ):
+        # gaurded
+        from unsloth import FastLanguageModel
+        from auto_gptq.utils.peft_utils import GPTQLoraModel
+        from ..plugin_utils.autogptq_utils import _create_new_module_triton, _replace_module
+
         peft_config, = modifiable_args # unpack modifiable args
 
         # some assertions
