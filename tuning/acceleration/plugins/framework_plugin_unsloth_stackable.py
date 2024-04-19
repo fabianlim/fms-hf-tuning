@@ -43,6 +43,8 @@ class UnslothStackableAccelerationPlugin(AccelerationPlugin):
         train_args: TrainingArguments,
         modifiable_args: Tuple[LoraConfig],
     ):
+        # NOTE: how do I check this now that the modifiable args are missing
+        # assert peft_config.lora_dropout == 0, "Unsloth Fused Attention requires lora_dropout argument to be set to 0"
 
         # need to check why this is needed
         assert model.dtype == torch.float16 and train_args.fp16,\
@@ -59,5 +61,5 @@ class UnslothStackableAccelerationPlugin(AccelerationPlugin):
 # register
 AccelerationPlugin.register_plugin(
     UnslothStackableAccelerationPlugin,
-    configuration_and_paths=["peft.quantization.unsloth"], 
+    configuration_and_paths=["peft.quantization.unsloth.stack_over"], 
 )
