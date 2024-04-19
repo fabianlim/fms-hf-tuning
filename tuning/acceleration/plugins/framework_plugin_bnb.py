@@ -71,7 +71,7 @@ class BNBAccelerationPlugin(AccelerationPlugin):
     def __init__(self, configurations: Dict[str, Dict]):
         super().__init__(configurations)
 
-        self._quant_type = self._check_config_in_values(
+        self._quant_type = self._check_config_and_maybe_check_values(
             key="peft.quantization.bitsandbytes.quant_type", 
             values=["fp4", "nf4"]
         )

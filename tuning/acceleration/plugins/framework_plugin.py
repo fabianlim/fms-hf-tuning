@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 @dataclass
 class PluginRegistration:
-    plugin: " AccelerationPlugin"
+    plugin: "AccelerationPlugin"
     AND: List[str] = None
     # OR: List[str] = None # not implemented yet
 
@@ -95,7 +95,7 @@ class AccelerationPlugin:
     def callbacks(self):
         return []
 
-    def _check_config_in_values(self, key: str, values: List[Any] = None):
+    def _check_config_and_maybe_check_values(self, key: str, values: List[Any] = None):
         t = _trace_key_path(self.configurations, key)
 
         if values is not None: # if there is something to check against
@@ -111,14 +111,16 @@ class AccelerationPlugin:
                 raise AccelerationPluginConfigError(
                     f"{self.__class__.__name__}: Value at \'{key}\' was \'{t}\'. Not found in expected set \'{values}\'."
                 )
-
-        if t is None:
-            raise AccelerationPluginConfigError(f"\'{key}\' is invalid")
+        else:
+            # if nothing to check against, we still want to ensure its a valid
+            # configuration key
+            if t is None:
+                raise AccelerationPluginConfigError(f"{self.__class__.__name__}: \'{key}\' was not a valid configuration config")
 
         return t
 
     def _check_config_equal(self, key: str, value: Any, **kwargs):
-        return self._check_config_in_values(key, [value], **kwargs)
+        return self._check_config_and_maybe_check_values(key, [value], **kwargs)
 
 class AccelerationPluginConfigError(Exception):
     pass

@@ -11,25 +11,24 @@ from typing import Tuple, Dict
 from .framework_plugin import AccelerationPlugin
 from functools import partial
 
+KEY = 'direct_integration'
+
 class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
+    
     
     require_packages = ['auto_gptq', 'unsloth', 'optimum']
     restricted_model_archs = ['MixtralForCausalLM', 'LlamaForCausalLM', 'MistralForCausalLM', 'GemmaForCausalLM']
 
     '''
-    NOTE: unloth's LICENSE file looks like a standar Apache 2.0, but in various parts of the code, it claims to require a commercial license if used to run on more than 4 GPUs, see 
+    NOTE: unloth's LICENSE file looks like a standard Apache 2.0, but in various parts of the code, it claims to require a commercial license if used to run on more than 4 GPUs, see 
     https://github.com/unslothai/unsloth/blob/d215fd902cf28feb8abcfde2d25281d0fbf9d28c/unsloth/models/llama.py#L1140-L1143
     '''
 
     def __init__(self, configurations: Dict[str, Dict]):
         super().__init__(configurations)
 
-        # just do checking, nothing must to configure at this point
-        # if need to configure then do something like this:
-        # self.kernel = self._get_config_value("peft.kernel")
-        self._check_config_equal(key="peft.quantization", value="unsloth")
-        self._check_config_equal(key="peft.quantization.unsloth.base_layer", value="auto_gptq")
-        self._check_config_equal(key="peft.quantization.unsloth.kernel", value="triton_v2")
+        self._check_config_equal(key=f"peft.quantization.unsloth.{KEY}.base_layer", value="auto_gptq")
+        self._check_config_equal(key=f"peft.quantization.unsloth.{KEY}.kernel", value="triton_v2")
 
     def model_loader(self, model_name: str, **kwargs):
         # guarded imports
@@ -141,5 +140,5 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
 # register
 AccelerationPlugin.register_plugin(
     UnslothAutoGPTQAccelerationPlugin,
-    configuration_and_paths=["peft.quantization.unsloth"], 
+    configuration_and_paths=[f"peft.quantization.unsloth.{KEY}"], 
 )
