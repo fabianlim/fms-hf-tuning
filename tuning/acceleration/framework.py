@@ -49,7 +49,10 @@ class AccelerationFramework:
                 self.plugins_require_custom_loading.append(plugin_name)
 
         if len(self.active_plugins) == 0:
-            raise ValueError(f"no plugins could be configured")
+            raise ValueError(
+                "No plugins could be configured. Please check the acceleration "
+                "framework configuration file."
+            )
 
         assert len(self.plugins_require_custom_loading) <= 1, \
             f"can load at most 1 plugin with custom model loading, but tried to \'{self.plugins_require_custom_loading}\'."

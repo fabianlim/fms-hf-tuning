@@ -11,7 +11,7 @@ from typing import Tuple, Dict
 from .framework_plugin import AccelerationPlugin
 from functools import partial
 
-KEY = 'direct_integration'
+KEY = 'standalone'
 
 class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
     
@@ -79,7 +79,6 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
         # gaurded
         from unsloth import FastLanguageModel
         from unsloth.gptq.triton.layers import GPTQuantLinear
-        from auto_gptq.utils.peft_utils import GPTQLoraModel
         from ..plugin_utils.autogptq_utils import create_new_module_peft, replace_module_peft
 
         peft_config, = modifiable_args # unpack modifiable args
@@ -92,29 +91,17 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
 
         # These functions need to replaced due to some incompatibliites 
         # with newer PEFT packages.
-        # - on augmentation we call auto_gptq.utils.peft_utils.get_gptq_peft_model
-        # - this internally calls peft.utils.other.get_peft_model
+        # - on augmentation we call FastLanguageModel.get_peft_model
         # - however the problem is that peft API moves very fast, and there are incompatiblities
         # 
         # During peft wrapping there are two key operations
         # 1. LoraModel._create_new_module is called to create a LoraLinear layer that is
         #    compatible with the base layer. For quantized base layers, the LoraLinear
         #    may be different.
-        # 2. GPTQLoraModel._replace_module to replace the existing Linear with the LoraLinear.
-        #    Also move to device (which may depend on how base layer is implemented)
-
-        # NOTE: GPTQLoraModel inherits from LoraModel, and the _create_new_module method is called
-        # on the parent. Hence _create_new_module is patched on the parent
-
-        # FIXME: 
-        # 1. investigate using BaseGPTQForCausalLM.make_sure_compatible_with_peft
-        #    to see if we can get around the patching
 
         _old_create_new_module = LoraModel
-        _old_replace_module = GPTQLoraModel._replace_module
         _create_new_module = partial(create_new_module_peft, target_cls=GPTQuantLinear)
         LoraModel._create_new_module = staticmethod(_create_new_module)
-        GPTQLoraModel._replace_module = MethodType(replace_module_peft, GPTQLoraModel)
 
         # In the unsloth implementation, the prepare_model_for_kbit_training get_peft_model is called 
         # inside `FastLanguageModel.get_peft_model`
@@ -133,7 +120,6 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
 
         # undo the patching for hygine
         LoraModel._create_new_module = staticmethod(_old_create_new_module)
-        GPTQLoraModel._replace_module = MethodType(_old_replace_module, GPTQLoraModel)
 
         return model, modifiable_args
 

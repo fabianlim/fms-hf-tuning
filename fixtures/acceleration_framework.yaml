@@ -19,13 +19,13 @@ plugins:
       unsloth:
 
         # uncomment this if you want the direct integration
-        # direct_integration:
-        #   base_layer: auto_gptq, # bitsandbytes (is this neede?) <- ITEM 4
+        # standalone:
+        #   base_layer: auto_gptq
         #   kernel: triton_v2
 
-        stack_on: auto_gptq
-        # apply_on: bitsandbytes (this will supercede) <- ITEM 4
-        fused_lora: True
-        fast_loss: True
-        fast_rsm_layernorm: True
-        fast_rope_embeddings: True
+        stackable: 
+          base_layer: auto_gptq # bitsandbytes
+          fused_lora: True
+          fast_loss: True
+          fast_rsm_layernorm: True
+          fast_rope_embeddings: True

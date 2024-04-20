@@ -71,6 +71,9 @@ class AutoGPTQAccelerationPlugin(AccelerationPlugin):
             trainable=True, # only support trainable mode
         )
 
+        # AutoGPTQ does not set the torch_dtype of the model carefully
+        model.config.torch_dtype = torch_dtype
+
         # these will be properly set since it is not loaded using from_pretrained
         # - so, set them here. 
         # - in particular "is_loaded_in_4bit" will be checked in prepare_model_for_kbit_training

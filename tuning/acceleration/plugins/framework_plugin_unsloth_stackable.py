@@ -19,19 +19,17 @@ class UnslothStackableAccelerationPlugin(AccelerationPlugin):
     def __init__(self, configurations: Dict[str, Dict]):
         super().__init__(configurations)
 
-        # not compatible with direct integration
-        self._check_config_equal(key=f"peft.quantization.unsloth.direct_integration", value=None)
         self._stack_on = self._check_config_and_maybe_check_values(
-            key=f"peft.quantization.unsloth.stack_on", 
+            key=f"peft.quantization.unsloth.stackable.base_layer", 
             values=['auto_gptq', 'bitsandbytes']
         )
         assert self._stack_on == 'auto_gptq', "Currently only supports stacking on auto_gptq."
         
         # only support these at the moment
-        self._check_config_equal(key=f"peft.quantization.unsloth.fused_lora", value=True)
-        self._check_config_equal(key=f"peft.quantization.unsloth.fast_loss", value=True)
-        self._check_config_equal(key=f"peft.quantization.unsloth.fast_rsm_layernorm", value=True)
-        self._check_config_equal(key=f"peft.quantization.unsloth.fast_rope_embeddings", value=True)
+        self._check_config_equal(key=f"peft.quantization.unsloth.stackable.fused_lora", value=True)
+        self._check_config_equal(key=f"peft.quantization.unsloth.stackable.fast_loss", value=True)
+        self._check_config_equal(key=f"peft.quantization.unsloth.stackable.fast_rsm_layernorm", value=True)
+        self._check_config_equal(key=f"peft.quantization.unsloth.stackable.fast_rope_embeddings", value=True)
 
     @property
     def requires_agumentation(self):
@@ -61,5 +59,5 @@ class UnslothStackableAccelerationPlugin(AccelerationPlugin):
 # register
 AccelerationPlugin.register_plugin(
     UnslothStackableAccelerationPlugin,
-    configuration_and_paths=["peft.quantization.unsloth.stack_over"], 
+    configuration_and_paths=["peft.quantization.unsloth.stackable"], 
 )
