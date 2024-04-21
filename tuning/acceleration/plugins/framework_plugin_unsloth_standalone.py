@@ -13,7 +13,7 @@ from functools import partial
 
 KEY = 'standalone'
 
-class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
+class UnslothStandAloneAccelerationPlugin(AccelerationPlugin):
     
     
     require_packages = ['auto_gptq', 'unsloth', 'optimum']
@@ -27,6 +27,7 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
     def __init__(self, configurations: Dict[str, Dict]):
         super().__init__(configurations)
 
+        # for now only support auto_gptq mode, but in future could potentially support other modes like BNB
         self._check_config_equal(key=f"peft.quantization.unsloth.{KEY}.base_layer", value="auto_gptq")
         self._check_config_equal(key=f"peft.quantization.unsloth.{KEY}.kernel", value="triton_v2")
 
@@ -125,6 +126,6 @@ class UnslothAutoGPTQAccelerationPlugin(AccelerationPlugin):
 
 # register
 AccelerationPlugin.register_plugin(
-    UnslothAutoGPTQAccelerationPlugin,
+    UnslothStandAloneAccelerationPlugin,
     configuration_and_paths=[f"peft.quantization.unsloth.{KEY}"], 
 )

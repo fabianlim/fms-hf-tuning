@@ -8,7 +8,7 @@ import torch
 
 class UnslothStackableAccelerationPlugin(AccelerationPlugin):
 
-    require_packages = ['unsloth', 'optimum']
+    require_packages = ['unsloth']
     restricted_model_archs = ['MixtralForCausalLM', 'LlamaForCausalLM', 'MistralForCausalLM']
 
     '''
@@ -19,11 +19,10 @@ class UnslothStackableAccelerationPlugin(AccelerationPlugin):
     def __init__(self, configurations: Dict[str, Dict]):
         super().__init__(configurations)
 
-        self._stack_on = self._check_config_and_maybe_check_values(
+        self._base_layer = self._check_config_and_maybe_check_values(
             key=f"peft.quantization.unsloth.stackable.base_layer", 
             values=['auto_gptq', 'bitsandbytes']
         )
-        assert self._stack_on == 'auto_gptq', "Currently only supports stacking on auto_gptq."
         
         # only support these at the moment
         self._check_config_equal(key=f"peft.quantization.unsloth.stackable.fused_lora", value=True)
@@ -53,7 +52,7 @@ class UnslothStackableAccelerationPlugin(AccelerationPlugin):
         from tuning.acceleration.plugin_utils.unsloth_utils import (
             add_unsloth_improvements
         )
-        model = add_unsloth_improvements(model)
+        model = add_unsloth_improvements(model, stacked_over=self._base_layer)
         return model, modifiable_args
 
 # register
