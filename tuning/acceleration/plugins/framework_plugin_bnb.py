@@ -1,8 +1,3 @@
-
-def parse_configuration():
-    pass
-
-
 from transformers import BitsAndBytesConfig, AutoModelForCausalLM
 
 from transformers import TrainingArguments

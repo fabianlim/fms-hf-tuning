@@ -123,7 +123,7 @@ def train(
     logger = logging.get_logger("sft_trainer")
 
     framework = None
-    if acceleration_framework_args is not None:
+    if acceleration_framework_args.acceleration_framework_config_file is not None:
         framework = AccelerationFramework(
             acceleration_framework_args.acceleration_framework_config_file
         )
