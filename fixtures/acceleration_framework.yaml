@@ -1,0 +1,31 @@
+plugins:
+
+  # PEFT-related acceleration
+  peft:
+
+    # quantization-releated acceleration
+    # e.g., kernels for quantized base weights
+    quantization: 
+
+      # AutoGPTQ quantized base weights.
+      auto_gptq:
+        kernel: triton_v2
+        from_quantized: True
+
+      # bitsandbytes quantized base weights.
+      # bitsandbytes:
+      #   quant_type: nf4 # fp4 
+
+      unsloth:
+
+        # uncomment this if you want the direct integration
+        # standalone:
+        #   base_layer: auto_gptq
+        #   kernel: triton_v2
+
+        stackable: 
+          base_layer: auto_gptq # bitsandbytes
+          fused_lora: True
+          fast_loss: True
+          fast_rsm_layernorm: True
+          fast_rope_embeddings: True
