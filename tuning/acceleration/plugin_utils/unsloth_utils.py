@@ -28,12 +28,24 @@ if has_xformers and has_unsloth:
 
     # unsloth llama imports
     from unsloth.models.llama import (
-        LlamaDecoderLayer_fast_forward, LlamaModel_fast_forward
+        LlamaModel_fast_forward_inference,
+        LlamaDecoderLayer_fast_forward, 
+        CausalLM_fast_forward,
+        LlamaModel_fast_forward,
+        LlamaAttention_fast_forward,
     )
 
     # unsloth mistral imports
     from unsloth.models.mistral import (
         MistralAttention_fast_forward, MistralForCausalLM_fast_forward
+    )
+
+    # unsloth mixtral imports
+    from unsloth.models.mixtral import (
+        MistralAttention_fast_forward, 
+        MixtralForCausalLM_fast_forward,
+        MixtralModel_fast_forward,
+        MixtralDecoderLayer_fast_forward,
     )
 
     TAG_GPTQ = 'auto_gptq'
@@ -87,7 +99,29 @@ if has_xformers and has_unsloth:
                 (('q_proj', 'k_proj', 'v_proj'), 'o_proj'),
                 'mlp', 
             )
-        )
+        ),
+        (
+            {'MixtralForCausalLM'}, 
+            (
+                MixtralForCausalLM_fast_forward, 
+                ('model', MixtralModel_fast_forward), 
+                MixtralDecoderLayer_fast_forward,
+                ('self_attn', MistralAttention_fast_forward),
+                (('q_proj', 'k_proj', 'v_proj'), 'o_proj'),
+                None,
+            )
+        ),
+        (
+            {'LlamaForCausalLM'}, 
+            (
+                CausalLM_fast_forward(LlamaModel_fast_forward_inference), 
+                ('model', LlamaModel_fast_forward), 
+                LlamaDecoderLayer_fast_forward,
+                ('self_attn', LlamaAttention_fast_forward),
+                (('q_proj', 'k_proj', 'v_proj'), 'o_proj'),
+                'mlp',
+            )
+        ),        
     ]
 
     # add improvements to a PeftModelForCausalLM
