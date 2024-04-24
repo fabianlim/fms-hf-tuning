@@ -41,7 +41,7 @@ from tuning.data import tokenizer_data_utils
 from tuning.trainercontroller import TrainerControllerCallback
 from tuning.utils.config_utils import get_hf_peft_config
 from tuning.utils.data_type_utils import get_torch_dtype
-from tuning.utils.import_utils import is_aim_available
+from tuning.utils.import_utils import is_aim_available, is_fms_accelerate_available
 
 if is_aim_available():
     # Local
@@ -99,7 +99,8 @@ def train(
     peft_config: Optional[  # pylint: disable=redefined-outer-name
         Union[peft_config.LoraConfig, peft_config.PromptTuningConfig]
     ] = None,
-    trainer_controller_args: configs.TrainerControllerArguments = None,
+    trainer_controller_args: Optional[configs.TrainerControllerArguments] = None,
+    acceleration_framework_args: Optional[configs.AccelerationFrameworkArguments] = None,
 ):
     """Call the SFTTrainer
 
@@ -113,9 +114,26 @@ def train(
             The peft configuration to pass to trainer
         trainer_control_args: configs.TrainerControllerArguments \
             for controlling the training loop using policy rules
+        acceleration_framework_args: configs.AccelerationFrameworkArguments \
+            for controlling acceleration framework
     """
 
     logger = logging.get_logger("sft_trainer")
+
+    framework = None
+    if (
+        acceleration_framework_args.acceleration_framework_config_file is not None
+    ):
+        if is_fms_accelerate_available():
+            from fms_acceleration import AccelerationFramework
+            framework = AccelerationFramework(
+                acceleration_framework_args.acceleration_framework_config_file
+            )
+        else:
+            raise ValueError(
+                f"specified acceleration framework config \'{acceleration_framework_args.acceleration_framework_config_file}\', "
+                "but fms_acceleration package not available"
+            )
 
     # Validate parameters
     if (not isinstance(train_args.num_train_epochs, (float, int))) or (
@@ -127,8 +145,12 @@ def train(
     ):
         raise ValueError("gradient_accumulation_steps has to be an integer >= 1")
 
+    model_loader = AutoModelForCausalLM.from_pretrained
+    if framework is not None and framework.requires_custom_loading:
+        model_loader = framework.model_loader # drop-in new loader
+
     task_type = "CAUSAL_LM"
-    model = AutoModelForCausalLM.from_pretrained(
+    model = model_loader(
         model_args.model_name_or_path,
         cache_dir=train_args.cache_dir,
         torch_dtype=get_torch_dtype(model_args.torch_dtype),
@@ -254,6 +276,11 @@ def train(
         )
         callbacks.append(tc_callback)
 
+    if framework is not None and framework.requires_agumentation:
+        model, (peft_config,) = framework.augmentation(
+            model, train_args, modifiable_args=(peft_config,)
+        )
+
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
@@ -282,6 +309,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
             configs.DataArguments,
             configs.TrainingArguments,
             configs.TrainerControllerArguments,
+            configs.AccelerationFrameworkArguments,
             peft_config.LoraConfig,
             peft_config.PromptTuningConfig,
         )
@@ -297,6 +325,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
         data_args,
         training_args,
         trainer_controller_args,
+        acceleration_framework_args,
         lora_config,
         prompt_tuning_config,
         peft_method,
@@ -308,7 +337,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
         tune_config = prompt_tuning_config
     else:
         tune_config = None
-    train(model_args, data_args, training_args, tune_config, trainer_controller_args)
+    train(model_args, data_args, training_args, tune_config, trainer_controller_args, acceleration_framework_args)
 
 
 if __name__ == "__main__":
