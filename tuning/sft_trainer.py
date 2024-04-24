@@ -47,6 +47,12 @@ from tuning.trainercontroller import TrainerControllerCallback
 from tuning.utils.config_utils import get_hf_peft_config
 from tuning.utils.data_type_utils import get_torch_dtype
 
+from transformers.utils.import_utils import _is_package_available
+
+_is_fms_accelerate_available = _is_package_available("fms_acceleration")
+
+def is_fms_accelerate_available():
+    return _is_fms_accelerate_available
 
 def train(
     model_args: configs.ModelArguments,
@@ -61,6 +67,7 @@ def train(
     ),
     additional_callbacks: Optional[List[TrainerCallback]] = None,
     exp_metadata: Optional[Dict] = None,
+    acceleration_framework_args: Optional[configs.AccelerationFrameworkArguments] = None,
 ):
     """Call the SFTTrainer
 
@@ -83,9 +90,26 @@ def train(
                               or TrainerControllers. Callbacks associated with \
                               tracker with automatically be added.
         exp_metadata: Dict of key value pairs passed to train to be recoreded by the tracker.
+        acceleration_framework_args: configs.AccelerationFrameworkArguments \
+            for controlling acceleration framework
     """
 
     logger = logging.get_logger("sft_trainer")
+
+    framework = None
+    if (
+        acceleration_framework_args.acceleration_framework_config_file is not None
+    ):
+        if is_fms_accelerate_available():
+            from fms_acceleration import AccelerationFramework
+            framework = AccelerationFramework(
+                acceleration_framework_args.acceleration_framework_config_file
+            )
+        else:
+            raise ValueError(
+                f"specified acceleration framework config \'{acceleration_framework_args.acceleration_framework_config_file}\', "
+                "but fms_acceleration package not available"
+            )
 
     # Validate parameters
     if (not isinstance(train_args.num_train_epochs, (float, int))) or (
@@ -130,8 +154,12 @@ def train(
     if additional_callbacks is not None:
         trainer_callbacks.append(additional_callbacks)
 
+
+    model_loader = AutoModelForCausalLM.from_pretrained
+    if framework is not None and framework.requires_custom_loading:
+        model_loader = framework.model_loader # drop-in new loader
     model_load_time = time.time()
-    model = AutoModelForCausalLM.from_pretrained(
+    model = model_loader(
         model_args.model_name_or_path,
         cache_dir=train_args.cache_dir,
         torch_dtype=get_torch_dtype(model_args.torch_dtype),
@@ -248,6 +276,11 @@ def train(
             "Validation dataset length is %s", len(formatted_validation_dataset)
         )
 
+    if framework is not None and framework.requires_agumentation:
+        model, (peft_config,) = framework.augmentation(
+            model, train_args, modifiable_args=(peft_config,)
+        )
+
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
@@ -291,6 +324,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
             configs.DataArguments,
             configs.TrainingArguments,
             configs.TrainerControllerArguments,
+            configs.AccelerationFrameworkArguments,
             peft_config.LoraConfig,
             peft_config.PromptTuningConfig,
             FileLoggingTrackerConfig,
@@ -315,6 +349,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
         data_args,
         training_args,
         trainer_controller_args,
+        acceleration_framework_args,
         lora_config,
         prompt_tuning_config,
         file_logger_config,
@@ -362,6 +397,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
         tracker_configs=combined_tracker_configs,
         additional_callbacks=None,
         exp_metadata=metadata,
+        acceleration_framework_args=acceleration_framework_args,
     )
 
 
