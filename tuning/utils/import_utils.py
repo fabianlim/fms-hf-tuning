@@ -16,7 +16,10 @@
 from transformers.utils.import_utils import _is_package_available
 
 _is_aim_available = _is_package_available("aim")
-
+_is_fms_accelerate_available = _is_package_available("fms_acceleration")
 
 def is_aim_available():
     return _is_aim_available
+
+def is_fms_accelerate_available():
+    return _is_fms_accelerate_available
