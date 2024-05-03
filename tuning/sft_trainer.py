@@ -311,7 +311,7 @@ def train(
         if is_accelerate_available:
             accelerator = trainer.accelerator
 
-        for x in framework.callbacks(accelerator):
+        for x in framework.get_callbacks_ready_for_train(trainer.model, accelerator):
             trainer.add_callback(x)
 
     trainer.train()
