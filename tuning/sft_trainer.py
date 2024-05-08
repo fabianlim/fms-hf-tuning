@@ -29,7 +29,7 @@ from transformers import (
     LlamaTokenizerFast,
     TrainerCallback,
 )
-from transformers.utils import logging, is_accelerate_available
+from transformers.utils import is_accelerate_available, logging
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
 import datasets
 import fire
@@ -46,6 +46,10 @@ from tuning.utils.import_utils import is_aim_available, is_fms_accelerate_availa
 if is_aim_available():
     # Local
     from tuning.aim_loader import get_aimstack_callback
+
+if is_fms_accelerate_available():
+    # Third Party
+    from fms_acceleration import AccelerationFramework  # pylint: disable=import-error
 
 TRAINING_LOGS_FILENAME = "training_logs.jsonl"
 
@@ -100,7 +104,9 @@ def train(
         Union[peft_config.LoraConfig, peft_config.PromptTuningConfig]
     ] = None,
     trainer_controller_args: Optional[configs.TrainerControllerArguments] = None,
-    acceleration_framework_args: Optional[configs.AccelerationFrameworkArguments] = None,
+    acceleration_framework_args: Optional[
+        configs.AccelerationFrameworkArguments
+    ] = None,
 ):
     """Call the SFTTrainer
 
@@ -122,16 +128,17 @@ def train(
 
     framework = None
     if (
-        acceleration_framework_args.acceleration_framework_config_file is not None
+        acceleration_framework_args is not None
+        and acceleration_framework_args.acceleration_framework_config_file is not None
     ):
         if is_fms_accelerate_available():
-            from fms_acceleration import AccelerationFramework
             framework = AccelerationFramework(
                 acceleration_framework_args.acceleration_framework_config_file
             )
         else:
             raise ValueError(
-                f"specified acceleration framework config \'{acceleration_framework_args.acceleration_framework_config_file}\', "
+                "specified acceleration framework config  "
+                f"'{acceleration_framework_args.acceleration_framework_config_file}', "
                 "but fms_acceleration package not available"
             )
 
@@ -147,7 +154,7 @@ def train(
 
     model_loader = AutoModelForCausalLM.from_pretrained
     if framework is not None and framework.requires_custom_loading:
-        model_loader = framework.model_loader # drop-in new loader
+        model_loader = framework.model_loader  # drop-in new loader
 
     task_type = "CAUSAL_LM"
     model = model_loader(
@@ -301,11 +308,10 @@ def train(
         )
 
     if framework is not None:
-        accelerator = None
-        if is_accelerate_available:
-            accelerator = trainer.accelerator
+        accelerator = None if not is_accelerate_available else trainer.accelerator
 
-        for x in framework.callbacks(accelerator):
+        # ready for train may produce additional callbacks for the trainer
+        for x in framework.get_callbacks_and_ready_for_train(model, accelerator):
             trainer.add_callback(x)
 
     trainer.train()
@@ -346,7 +352,14 @@ def main(**kwargs):  # pylint: disable=unused-argument
         tune_config = prompt_tuning_config
     else:
         tune_config = None
-    train(model_args, data_args, training_args, tune_config, trainer_controller_args, acceleration_framework_args)
+    train(
+        model_args,
+        data_args,
+        training_args,
+        tune_config,
+        trainer_controller_args,
+        acceleration_framework_args,
+    )
 
 
 if __name__ == "__main__":

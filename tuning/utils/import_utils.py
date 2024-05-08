@@ -12,14 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Standard
+from typing import List, Union
+
 # Third Party
 from transformers.utils.import_utils import _is_package_available
 
 _is_aim_available = _is_package_available("aim")
-_is_fms_accelerate_available = _is_package_available("fms_acceleration")
+
 
 def is_aim_available():
     return _is_aim_available
 
-def is_fms_accelerate_available():
-    return _is_fms_accelerate_available
+
+def is_fms_accelerate_available(
+    plugins: Union[str, List[str]] = None, package_name: str = "fms_acceleration"
+):
+    names = [package_name]
+    if plugins is not None:
+        if isinstance(plugins, str):
+            plugins = [plugins]
+        names.extend([package_name + "_" + x for x in plugins])
+
+    for n in names:
+        if not _is_package_available(n):
+            return False
+    return True
