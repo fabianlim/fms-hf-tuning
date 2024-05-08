@@ -109,7 +109,7 @@ def train(
             )
         else:
             raise ValueError(
-                "specified acceleration framework config  "
+                "Specified acceleration framework config "
                 f"'{acceleration_framework_args.acceleration_framework_config_file}', "
                 "but fms_acceleration package not available"
             )
