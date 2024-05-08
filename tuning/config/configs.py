@@ -112,6 +112,7 @@ class TrainerControllerArguments:
         },
     )
 
+
 @dataclass
 class AccelerationFrameworkArguments:
     acceleration_framework_config_file: str = field(
