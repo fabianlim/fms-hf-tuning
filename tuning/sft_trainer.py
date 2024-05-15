@@ -46,13 +46,12 @@ from tuning.trackers.tracker_factory import get_tracker
 from tuning.trainercontroller import TrainerControllerCallback
 from tuning.utils.config_utils import get_hf_peft_config
 from tuning.utils.data_type_utils import get_torch_dtype
+from tuning.utils.import_utils import is_fms_accelerate_available
 
-from transformers.utils.import_utils import _is_package_available
+if is_fms_accelerate_available():
+    # Third Party
+    from fms_acceleration import AccelerationFramework  # pylint: disable=import-error
 
-_is_fms_accelerate_available = _is_package_available("fms_acceleration")
-
-def is_fms_accelerate_available():
-    return _is_fms_accelerate_available
 
 def train(
     model_args: configs.ModelArguments,
@@ -157,10 +156,9 @@ def train(
     if additional_callbacks is not None:
         trainer_callbacks.append(additional_callbacks)
 
-
     model_loader = AutoModelForCausalLM.from_pretrained
     if framework is not None and framework.requires_custom_loading:
-        model_loader = framework.model_loader # drop-in new loader
+        model_loader = framework.model_loader  # drop-in new loader
     model_load_time = time.time()
     model = model_loader(
         model_args.model_name_or_path,
