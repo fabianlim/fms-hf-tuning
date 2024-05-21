@@ -184,6 +184,7 @@ class TunedCausalLM:
                         if use_flash_attn
                         else None,
                         torch_dtype=torch.bfloat16 if use_flash_attn else None,
+                        device_map='auto',
                     )
                 except OSError as e:
                     print("Failed to initialize checkpoint model!")
@@ -197,9 +198,10 @@ class TunedCausalLM:
                 torch_dtype=torch.bfloat16 if use_flash_attn else None,
             )
 
+        model = model.merge_and_unload()
         device = "cuda" if torch.cuda.is_available() else None
-        print(f"Inferred device: {device}")
-        model.to(device)
+        # print(f"Inferred device: {device}")
+        # model.to(device)
         return cls(model, tokenizer, device)
 
     def run(
