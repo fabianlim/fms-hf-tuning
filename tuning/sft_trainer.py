@@ -41,6 +41,10 @@ from tuning.config.tracker_configs import (
     FileLoggingTrackerConfig,
     TrackerConfigFactory,
 )
+from tuning.config.acceleration_configs import (
+    QuantizedLoraConfig,
+    FusedOpsAndKernelsConfig
+)
 from tuning.data import tokenizer_data_utils
 from tuning.trackers.tracker_factory import get_tracker
 from tuning.trainercontroller import TrainerControllerCallback
@@ -51,6 +55,10 @@ from tuning.utils.import_utils import is_fms_accelerate_available
 if is_fms_accelerate_available():
     # Third Party
     from fms_acceleration import AccelerationFramework  # pylint: disable=import-error
+    from tuning.config.acceleration_configs.acceleration_framework_config import (
+        convert_dataclasses_to_acceleration_config,
+        parse_acceleration_config_to_yaml
+    )
 
 
 def train(
@@ -69,6 +77,8 @@ def train(
     acceleration_framework_args: Optional[
         configs.AccelerationFrameworkArguments
     ] = None,
+    quantized_lora_config: Optional[QuantizedLoraConfig] = None,
+    foak_args: Optional[FusedOpsAndKernelsConfig] = None,
 ):
     """Call the SFTTrainer
 
@@ -97,19 +107,33 @@ def train(
 
     logger = logging.get_logger("sft_trainer")
 
+    acceleration_framework_config = convert_dataclasses_to_acceleration_config(
+        quantized_lora_config, foak_args
+    )
     framework = None
-    if (
-        acceleration_framework_args is not None
-        and acceleration_framework_args.acceleration_framework_config_file is not None
-    ):
+    # if (
+    #     acceleration_framework_args is not None
+    #     and acceleration_framework_args.acceleration_framework_config_file is not None
+    # ):
+    if acceleration_framework_config is not None:
         if is_fms_accelerate_available():
-            framework = AccelerationFramework(
-                acceleration_framework_args.acceleration_framework_config_file
-            )
+            # framework = AccelerationFramework(
+            #     acceleration_framework_args.acceleration_framework_config_file
+            # )
+            from tempfile import NamedTemporaryFile
+            with NamedTemporaryFile('w') as f:
+                parse_acceleration_config_to_yaml(
+                    acceleration_framework_config, f.name
+                )
+                framework = AccelerationFramework(f.name)
         else:
+            # raise ValueError(
+            #     "Specified acceleration framework config "
+            #     f"'{acceleration_framework_args.acceleration_framework_config_file}', "
+            #     "but fms_acceleration package not available"
+            # )
             raise ValueError(
-                "Specified acceleration framework config "
-                f"'{acceleration_framework_args.acceleration_framework_config_file}', "
+                "Specified acceleration configs "
                 "but fms_acceleration package not available"
             )
 
@@ -338,6 +362,8 @@ def main(**kwargs):  # pylint: disable=unused-argument
             peft_config.PromptTuningConfig,
             FileLoggingTrackerConfig,
             AimConfig,
+            QuantizedLoraConfig,
+            FusedOpsAndKernelsConfig
         )
     )
     parser.add_argument(
@@ -363,6 +389,8 @@ def main(**kwargs):  # pylint: disable=unused-argument
         prompt_tuning_config,
         file_logger_config,
         aim_config,
+        quantized_lora_config,
+        foak_config, 
         additional,
         _,
     ) = parser.parse_args_into_dataclasses(return_remaining_strings=True)
@@ -407,6 +435,8 @@ def main(**kwargs):  # pylint: disable=unused-argument
         additional_callbacks=None,
         exp_metadata=metadata,
         acceleration_framework_args=acceleration_framework_args,
+        quantized_lora_config=quantized_lora_config,
+        foak_args=foak_config,
     )
 
 
