@@ -50,15 +50,7 @@ from tuning.trackers.tracker_factory import get_tracker
 from tuning.trainercontroller import TrainerControllerCallback
 from tuning.utils.config_utils import get_hf_peft_config
 from tuning.utils.data_type_utils import get_torch_dtype
-from tuning.utils.import_utils import is_fms_accelerate_available
-
-if is_fms_accelerate_available():
-    # Third Party
-    from fms_acceleration import AccelerationFramework  # pylint: disable=import-error
-    from tuning.config.acceleration_configs.acceleration_framework_config import (
-        convert_dataclasses_to_acceleration_config,
-        parse_acceleration_config_to_yaml
-    )
+from tuning.config.acceleration_configs import AccelerationFrameworkConfig
 
 
 def train(
@@ -107,36 +99,6 @@ def train(
 
     logger = logging.get_logger("sft_trainer")
 
-    acceleration_framework_config = convert_dataclasses_to_acceleration_config(
-        quantized_lora_config, foak_args
-    )
-    framework = None
-    # if (
-    #     acceleration_framework_args is not None
-    #     and acceleration_framework_args.acceleration_framework_config_file is not None
-    # ):
-    if acceleration_framework_config is not None:
-        if is_fms_accelerate_available():
-            # framework = AccelerationFramework(
-            #     acceleration_framework_args.acceleration_framework_config_file
-            # )
-            from tempfile import NamedTemporaryFile
-            with NamedTemporaryFile('w') as f:
-                parse_acceleration_config_to_yaml(
-                    acceleration_framework_config, f.name
-                )
-                framework = AccelerationFramework(f.name)
-        else:
-            # raise ValueError(
-            #     "Specified acceleration framework config "
-            #     f"'{acceleration_framework_args.acceleration_framework_config_file}', "
-            #     "but fms_acceleration package not available"
-            # )
-            raise ValueError(
-                "Specified acceleration configs "
-                "but fms_acceleration package not available"
-            )
-
     # Validate parameters
     if (not isinstance(train_args.num_train_epochs, (float, int))) or (
         train_args.num_train_epochs <= 0
@@ -179,6 +141,10 @@ def train(
     # Add any extra callback if passed by users
     if additional_callbacks is not None:
         trainer_callbacks.append(additional_callbacks)
+
+    framework = AccelerationFrameworkConfig.from_dataclasses(
+        quantized_lora_config, foak_args
+    ).get_framework()
 
     model_loader = AutoModelForCausalLM.from_pretrained
     if framework is not None and framework.requires_custom_loading:

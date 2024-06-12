@@ -18,6 +18,10 @@ from tuning.utils.import_utils import is_fms_accelerate_available
 from .quantized_lora_config import AutoGPTQLoraConfig, BNBQLoraConfig
 import yaml
 
+if is_fms_accelerate_available():
+    # Third Party
+    from fms_acceleration import AccelerationFramework  # pylint: disable=import-error
+
 # DESIGN OF FMS CONFIGS:
 # - FMS will have differnt configs (probably one (or more) / plugin).
 # - e,g. QuantizedLoraConfig will be for the accelerated_peft plugin
@@ -56,77 +60,90 @@ class AccelerationFrameworkConfig:
 
     bitsandbytes: Annotated[BNBQLoraConfig, "peft", "quantization"] = None
 
-def convert_dataclasses_to_acceleration_config(*dataclasses: Type):
-    "Convert one or many FMS config dataclasses to a monolithic AccelerationConfig"
+    @staticmethod
+    def from_dataclasses(*dataclasses: Type):
+        "Convert one or many FMS config dataclasses to a monolithic AccelerationConfig"
 
-    config = AccelerationFrameworkConfig()
-    rem_fields = {fi.name: fi for fi in fields(config)} # these need to be parsed
+        config = AccelerationFrameworkConfig()
+        rem_fields = {fi.name: fi for fi in fields(config)} # these need to be parsed
 
-    def _convert(*dcs: Type):
-        for dc in dcs:
-            nested_dataclasses = []
-            for fi in fields(dc):
-                attr = getattr(dc, fi.name) 
-                if is_dataclass(attr):
-                    nested_dataclasses.append(attr)
-            
-            if len(nested_dataclasses) > 0:
-                _convert(*nested_dataclasses)
-                return
+        def _convert(*dcs: Type):
+            for dc in dcs:
+                nested_dataclasses = []
+                for fi in fields(dc):
+                    attr = getattr(dc, fi.name) 
+                    if is_dataclass(attr):
+                        nested_dataclasses.append(attr)
+                
+                if len(nested_dataclasses) > 0:
+                    _convert(*nested_dataclasses)
+                    return
 
-            # otherwise it must be a pure dataclass by design
-            found = set()
-            for fi in rem_fields.values():
-                if isinstance(dc, fi.type.__origin__):
-                    setattr(config, fi.name, dc)
-                    found.add(fi.name)
-            for name in found:
-                del rem_fields[name]
+                # otherwise it must be a pure dataclass by design
+                found = set()
+                for fi in rem_fields.values():
+                    if isinstance(dc, fi.type.__origin__):
+                        setattr(config, fi.name, dc)
+                        found.add(fi.name)
+                for name in found:
+                    del rem_fields[name]
 
-    _convert(*dataclasses)
-    return config
+        _convert(*dataclasses)
+        return config
 
-def parse_acceleration_config(config: "AccelerationFrameworkConfig"):
-    """convert a valid AccelerationFrameworkConfig dataclass into a schema-less dictionary
-    as dictated by the header annotations.
-    """
+    def get_framework(self):
 
-    # populate a dictionary
-    configuration_contents = {}
+        if is_fms_accelerate_available():
 
-    # helper function to populate
-    def _descend_and_set(path: List[str], d: Dict):
-        r = configuration_contents
-        for p in path[:-1]:
-            if p not in r:
-                r[p] = {} # branch
-            r = r[p]
+            # to be eventually be made to be passed as a dict to Acceleration
+            # Framework
+            from tempfile import NamedTemporaryFile
+            with NamedTemporaryFile('w') as f:
+                self.to_yaml(f.name)
+                return AccelerationFramework(f.name)
+        else:
+            raise ValueError(
+                "Specified acceleration framework configs "
+                "but fms_acceleration package not available"
+            )
 
-        r[path[-1]] = d
+    def to_dict(self):
+        """convert a valid AccelerationFrameworkConfig dataclass into a schema-less dictionary
+        as dictated by the header annotations.
+        """
 
-    # parse each field
-    already_set = set()
-    for fi in fields(config):
-        datacls = getattr(config, fi.name)
-        if datacls:
-            # this is the documented way to get annotations
-            # https://docs.python.org/3/library/typing.html#typing.Annotated
-            prefix_path = fi.type.__metadata__
-            if prefix_path in already_set:
-                raise ValueError(f"configuration path '{prefix_path}' already occupied.")
+        # populate a dictionary
+        configuration_contents = {}
 
-            path = prefix_path + (fi.name,)
-            already_set.add(prefix_path)
-            _descend_and_set(path, asdict(datacls))
+        # helper function to populate
+        def _descend_and_set(path: List[str], d: Dict):
+            r = configuration_contents
+            for p in path[:-1]:
+                if p not in r:
+                    r[p] = {} # branch
+                r = r[p]
 
-    return configuration_contents
+            r[path[-1]] = d
 
-if is_fms_accelerate_available():
+        # parse each field
+        already_set = set()
+        for fi in fields(self):
+            datacls = getattr(self, fi.name)
+            if datacls:
+                # this is the documented way to get annotations
+                # https://docs.python.org/3/library/typing.html#typing.Annotated
+                prefix_path = fi.type.__metadata__
+                if prefix_path in already_set:
+                    raise ValueError(f"configuration path '{prefix_path}' already occupied.")
 
-    from fms_acceleration.constants import KEY_PLUGINS
+                path = prefix_path + (fi.name,)
+                already_set.add(prefix_path)
+                _descend_and_set(path, asdict(datacls))
 
-    def parse_acceleration_config_to_yaml(config: "AccelerationFrameworkConfig", filename: str):
+        return configuration_contents
+
+    def to_yaml(self, filename: str, top_level_key: str = 'plugins'):
         "convert a valid AccelerationConfig dataclass into a yaml"
-        configuration_contents = parse_acceleration_config(config)
+        configuration_contents = self.to_dict()
         with open(filename, "w") as f:
-            yaml.dump({KEY_PLUGINS: configuration_contents}, f)
+            yaml.dump({top_level_key: configuration_contents}, f)
