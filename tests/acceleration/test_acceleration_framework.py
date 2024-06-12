@@ -52,11 +52,6 @@ if is_fms_accelerate_available():
 # repository.
 # - see plugins/framework/tests/test_framework.py
 
-# CONFIG_PATH_AUTO_GPTQ = os.path.join(
-#     os.path.dirname(__file__),
-#     "../../fixtures/accelerated-peft-autogptq-sample-configuration.yaml",
-# )
-
 # helper function
 def create_mock_plugin_class(plugin_cls):
     "Create a mocked acceleration framework class that can be used to spy"
@@ -156,10 +151,6 @@ def test_framework_not_installed_or_initalized_properly():
         model_args, data_args, training_args, tune_config = causal_lm_train_kwargs(
             TRAIN_KWARGS
         )
-        #framework_args = config.AccelerationFrameworkArguments(
-        #    acceleration_framework_config_file=CONFIG_PATH_AUTO_GPTQ,
-        #)
-
         quantized_lora_config = QuantizedLoraConfig(auto_gptq=AutoGPTQLoraConfig())
 
         # patch is_fms_accelerate_available to return False inside sft_trainer
@@ -176,31 +167,8 @@ def test_framework_not_installed_or_initalized_properly():
                     data_args,
                     training_args,
                     tune_config,
-                    # acceleration_framework_args=framework_args,
                     quantized_lora_config=quantized_lora_config
                 )
-
-        # test with a dummy configuration file that will fail to activate any
-        # framework plugin
-        # with tempfile.NamedTemporaryFile("w") as f:
-        #     yaml.dump({KEY_PLUGINS: {"dummy": 1}}, f)
-
-        #     framework_args_dummy_file = config.AccelerationFrameworkArguments(
-        #         acceleration_framework_config_file=f.name,
-        #     )
-
-        #     # patch is_fms_accelerate_available to return False inside sft_trainer
-        #     # to simulate fms_acceleration not installed
-        #     with pytest.raises(ValueError) as e:
-        #         sft_trainer.train(
-        #             model_args,
-        #             data_args,
-        #             training_args,
-        #             tune_config,
-        #             acceleration_framework_args=framework_args_dummy_file,
-        #         )
-        #     e.match("No plugins could be configured.")
-
 
 @pytest.mark.skipif(
     not is_fms_accelerate_available(plugins="peft"),
@@ -220,9 +188,6 @@ def test_framework_intialized_properly():
         model_args, data_args, training_args, tune_config = causal_lm_train_kwargs(
             TRAIN_KWARGS
         )
-        # framework_args = config.AccelerationFrameworkArguments(
-        #     acceleration_framework_config_file=CONFIG_PATH_AUTO_GPTQ,
-        # )
         quantized_lora_config = QuantizedLoraConfig(auto_gptq=AutoGPTQLoraConfig())
 
         # create mocked plugin class for spying

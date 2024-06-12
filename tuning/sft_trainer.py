@@ -66,9 +66,6 @@ def train(
     ),
     additional_callbacks: Optional[List[TrainerCallback]] = None,
     exp_metadata: Optional[Dict] = None,
-    acceleration_framework_args: Optional[
-        configs.AccelerationFrameworkArguments
-    ] = None,
     quantized_lora_config: Optional[QuantizedLoraConfig] = None,
     fusedops_kernels_config: Optional[FusedOpsAndKernelsConfig] = None,
 ):
@@ -323,7 +320,6 @@ def main(**kwargs):  # pylint: disable=unused-argument
             configs.DataArguments,
             configs.TrainingArguments,
             configs.TrainerControllerArguments,
-            configs.AccelerationFrameworkArguments,
             peft_config.LoraConfig,
             peft_config.PromptTuningConfig,
             FileLoggingTrackerConfig,
@@ -350,7 +346,6 @@ def main(**kwargs):  # pylint: disable=unused-argument
         data_args,
         training_args,
         trainer_controller_args,
-        acceleration_framework_args,
         lora_config,
         prompt_tuning_config,
         file_logger_config,
@@ -400,7 +395,6 @@ def main(**kwargs):  # pylint: disable=unused-argument
         tracker_configs=combined_tracker_configs,
         additional_callbacks=None,
         exp_metadata=metadata,
-        acceleration_framework_args=acceleration_framework_args,
         quantized_lora_config=quantized_lora_config,
         fusedops_kernels_config=fusedops_kernels_config,
     )

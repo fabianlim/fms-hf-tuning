@@ -81,7 +81,7 @@ class ConfigAnnotation:
 class AccelerationFrameworkConfig:
     "Dataclass that manages configuration of AccelerationFramework"
 
-    PACKAGE_PREFIX = 'fms_acceleration'
+    PACKAGE_PREFIX = 'fms_acceleration_'
 
     # each field will a single-level use case dataclass
     auto_gptq: Annotated[
