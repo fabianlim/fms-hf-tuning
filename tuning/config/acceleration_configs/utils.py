@@ -18,7 +18,7 @@ from dataclasses import fields
 from transformers.hf_argparser import string_to_bool, DataClass
 from itertools import cycle
 
-def ensure_dataclasses_initialized(dataclass: DataClass):
+def ensure_nested_dataclasses_initialized(dataclass: DataClass):
     for f in fields(dataclass):
         nested_type = f.type
         values = getattr(dataclass, f.name)

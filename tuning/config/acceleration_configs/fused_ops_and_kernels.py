@@ -15,9 +15,7 @@
 
 from dataclasses import dataclass
 from typing import List
-from .utils import EnsureTypes, ensure_dataclasses_initialized
-
-# to use install fms_acceleration_foak
+from .utils import EnsureTypes, ensure_nested_dataclasses_initialized
 
 @dataclass
 class FusedOpsAndKernelsConfig:
@@ -40,7 +38,7 @@ class FusedOpsAndKernelsConfig:
             )
 
         # ensure nested dataclasses initialized
-        ensure_dataclasses_initialized(self)
+        ensure_nested_dataclasses_initialized(self)
 
 @dataclass
 class FusedLoraConfig(List):

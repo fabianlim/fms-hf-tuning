@@ -18,7 +18,7 @@ from tuning.utils.import_utils import is_fms_accelerate_available
 from .quantized_lora_config import AutoGPTQLoraConfig, BNBQLoraConfig
 from .fused_ops_and_kernels import FusedLoraConfig, FastKernelsConfig
 import yaml
-from enum import Enum
+import warnings
 
 if is_fms_accelerate_available():
     # Third Party
@@ -55,28 +55,63 @@ if is_fms_accelerate_available():
 #   use-case dataclass that violates these rules.
 
 # these are optional annotations that describe different behavior
-class AccelerationAnnotation(Enum):
+@dataclass
+class ConfigAnnotation:
 
-    # if it can only exist alone in its path
-    PATH_SINGLE = 1
+    # AccelerationFramework configuration path
+    path: str 
+
+    # if omitted, will take the field name
+    key: str = None 
+
+    # only one that has single=True may exist under its path
+    # - this is used to indicate conflicting configurations 
+    # - we do not allow two configurations that load the model to be 
+    #   activated at the same time
+    standalone: bool = False 
+
+    # set to true to throw a user warning
+    experimental: bool = False
+
+    # set to indicate what acceeleration packages are needed 
+    required_packages: List[str] = None
 
 @dataclass
 class AccelerationFrameworkConfig:
     "Dataclass that manages configuration of AccelerationFramework"
 
+    PACKAGE_PREFIX = 'fms_acceleration'
+
     # each field will a single-level use case dataclass
     auto_gptq: Annotated[
-        AutoGPTQLoraConfig, "peft.quantization", AccelerationAnnotation.PATH_SINGLE
+        AutoGPTQLoraConfig, ConfigAnnotation(
+            path="peft.quantization", standalone=True, 
+            required_packages=['peft']
+        )
     ] = None
 
     bitsandbytes: Annotated[
-        BNBQLoraConfig, "peft.quantization", AccelerationAnnotation.PATH_SINGLE
+        BNBQLoraConfig, ConfigAnnotation(
+            path="peft.quantization", standalone=True, 
+            required_packages=['peft']
+        )
     ] = None
     
-    fused_lora: Annotated[FusedLoraConfig, "peft.quantization"] = None
+    fused_lora: Annotated[
+        FusedLoraConfig, ConfigAnnotation(
+            path="peft.quantization", key='fused_ops_and_kernels', 
+            experimental=True,
+            required_packages=['foak']
+        )
+    ] = None
 
-    fast_kernels: Annotated[FastKernelsConfig, "peft.quantization"] = None
-
+    fast_kernels: Annotated[
+        FastKernelsConfig, ConfigAnnotation(
+            path="peft.quantization", key='fused_ops_and_kernels', 
+            experimental=True,
+            required_packages=['foak']
+        )
+    ] = None
 
     @staticmethod
     def from_dataclasses(*dataclasses: Type):
@@ -88,7 +123,6 @@ class AccelerationFrameworkConfig:
         # Assumption: dataclasses is a list of nested dataclasses
         # - each dc in dataclasses is a nested dataclass.
         # - each dc.field in dc is a non-nested dataclass.
-
 
         # first unroll all the dataclases into a single level
         nested_dataclasses = []
@@ -145,8 +179,11 @@ class AccelerationFrameworkConfig:
                 return AccelerationFramework(f.name)
         else:
             raise ValueError(
-                "Specified acceleration framework configs "
-                "but fms_acceleration package not available"
+                "No acceleration framework package found. To use, first "
+                "ensure that 'pip install -e.[fms-accel]' is done first to "
+                "obtain the acceleration framework dependency. Additional "
+                "acceleration plugins make be required depending on the requsted "
+                "acceleration. See README.md for instructions."
             )
 
     def to_dict(self):
@@ -162,26 +199,11 @@ class AccelerationFrameworkConfig:
             r = configuration_contents
             for p in path[:-1]:
                 if p not in r:
-                    r[p] = {} # branch
+                    r[p] = {} # new branch
                 r = r[p]
 
-            r[path[-1]] = d
-
-        # helper function to convert annotations
-        def _manage_annotation(metadata):
-            if len(metadata) == 0:
-                raise ValueError(
-                    "All AccelerationFrameworkConfig fields must be annotated to be "
-                    "parsed."
-                )
-            # handle the prefix path
-            prefix_path = tuple(metadata[0].split('.')) # split into type
-
-            annotation = None
-            if len(metadata) >= 2:
-                annotation = metadata[1]
-
-            return prefix_path, annotation
+            p = path[-1]
+            r[p] = {**r.get(p, {}), **d} # merge dict if exists
 
         # parse each field
         already_set = set()
@@ -190,15 +212,38 @@ class AccelerationFrameworkConfig:
             if datacls is not None:
                 # this is the documented way to get annotations
                 # https://docs.python.org/3/library/typing.html#typing.Annotated
-                annotate: AccelerationAnnotation
-                prefix_path, annotate = _manage_annotation(fi.type.__metadata__)
+                annotate: ConfigAnnotation
+                annotate, = fi.type.__metadata__
+                prefix_path = tuple(annotate.path.split('.'))
                 if (
-                    annotate == AccelerationAnnotation.PATH_SINGLE and
+                    annotate.standalone and
                     prefix_path in already_set
                 ):
                     raise ValueError(f"configuration path '{prefix_path}' already occupied.")
 
-                path = prefix_path + (fi.name,)
+                if annotate.experimental:
+                    warnings.warn(
+                        "An experimental acceleration feature is requested by specifying the "
+                        f"'--{fi.name}' argument. Please note this feature may not support certain "
+                        "edge cases at this juncture. When the feature matures this message will be turned off."
+                    )
+
+                if not all(
+                    is_fms_accelerate_available(x) for x in annotate.required_packages
+                ):
+                    raise ValueError(
+                        "An acceleration feature is requested by specifying the "
+                        f"'--{fi.name}' argument, but the this requires acceleration packages "
+                        "to be installed. Please do:\n" + 
+                        "\n".join([
+                            '- python -m fms_acceleration install '
+                            f'{AccelerationFrameworkConfig.PACKAGE_PREFIX + x}' 
+                            for x in annotate.required_packages
+                        ])
+                    )
+
+                key = annotate.key if annotate.key is not None else fi.name
+                path = prefix_path + (key,)
                 already_set.add(prefix_path)
                 _descend_and_set(path, asdict(datacls))
 

@@ -15,7 +15,7 @@
 
 from dataclasses import dataclass
 from typing import List
-from .utils import  EnsureTypes, ensure_dataclasses_initialized
+from .utils import  EnsureTypes, ensure_nested_dataclasses_initialized
 
 @dataclass
 class QuantizedLoraConfig:
@@ -31,7 +31,7 @@ class QuantizedLoraConfig:
             raise ValueError('at least one quantized config has to be specified.')
             
         # ensure nested dataclasses initialized
-        ensure_dataclasses_initialized(self)
+        ensure_nested_dataclasses_initialized(self)
 
 @dataclass
 class AutoGPTQLoraConfig(List):
