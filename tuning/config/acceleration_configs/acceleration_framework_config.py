@@ -16,7 +16,9 @@ from dataclasses import dataclass, fields, asdict, is_dataclass
 from typing import Annotated, List, Dict, Type
 from tuning.utils.import_utils import is_fms_accelerate_available
 from .quantized_lora_config import AutoGPTQLoraConfig, BNBQLoraConfig
+from .fused_ops_and_kernels import FusedLoraConfig, FastKernelsConfig
 import yaml
+from enum import Enum
 
 if is_fms_accelerate_available():
     # Third Party
@@ -51,44 +53,106 @@ if is_fms_accelerate_available():
 #   same header, cannot be active at the same time.
 # - An Acceleration Config is valid only if it does not have any 
 #   use-case dataclass that violates these rules.
+
+class AccelerationAnnotation:
+    SINGLE = 1
+
 @dataclass
 class AccelerationFrameworkConfig:
     "Dataclass that manages configuration of AccelerationFramework"
 
     # each field will a single-level use case dataclass
-    auto_gptq: Annotated[AutoGPTQLoraConfig, "peft", "quantization"] = None
+    auto_gptq: Annotated[
+        AutoGPTQLoraConfig, "peft.quantization", AccelerationAnnotation.SINGLE
+    ] = None
 
-    bitsandbytes: Annotated[BNBQLoraConfig, "peft", "quantization"] = None
+    bitsandbytes: Annotated[
+        BNBQLoraConfig, "peft.quantization", AccelerationAnnotation.SINGLE
+    ] = None
+    
+    fused_lora: Annotated[FusedLoraConfig, "peft.quantization"] = None
+
+    fast_kernels: Annotated[FastKernelsConfig, "peft.quantization"] = None
+
 
     @staticmethod
     def from_dataclasses(*dataclasses: Type):
         "Convert one or many FMS config dataclasses to a monolithic AccelerationConfig"
 
+
+        # Assumption: AccelerationFrameworkConfig only has fields that are
+        #             single level dataclasses
+        # Assumption: dataclasses is a list of nested dataclasses
+        # - each dc in dataclasses is a nested dataclass.
+        # - each dc.field in dc is a non-nested dataclass.
+
+        # def _convert(*dcs: Type):
+        #     for dc in dcs:
+
+        #         # collect all the fields and put 
+        #         nested_dataclasses = []
+        #         for fi in fields(dc):
+        #             attr = getattr(dc, fi.name) 
+        #             if is_dataclass(attr):
+        #                 nested_dataclasses.append(attr)
+        #         
+        #         if len(nested_dataclasses) > 0:
+        #             raise Exception('this is impossible')
+        #             _convert(*nested_dataclasses)
+        #             return
+
+        #         # otherwise it must be a pure dataclass by design
+        #         found = set()
+        #         for fi in rem_fields.values():
+        #             if isinstance(dc, fi.type.__origin__):
+        #                 setattr(config, fi.name, dc)
+        #                 found.add(fi.name)
+        #         for name in found:
+        #             del rem_fields[name]
+
+        # _convert(*dataclasses)
+
+        # first unroll all the dataclases into a single level
+        nested_dataclasses = []
+        for dc in dataclasses:
+            # make sure that it every field is a dataclss
+            for fi in fields(dc):
+                attr = getattr(dc, fi.name) 
+                if attr is None:
+                    break # skip the None attributes
+
+                if not is_dataclass(attr): 
+                    raise ValueError(f"field '{fi.name}' is specified but not a dataclass")
+
+                # NOTE: should we also check that these are non-nested 
+                # dataclasses?
+                nested_dataclasses.append(attr)
+
         config = AccelerationFrameworkConfig()
         rem_fields = {fi.name: fi for fi in fields(config)} # these need to be parsed
 
-        def _convert(*dcs: Type):
-            for dc in dcs:
-                nested_dataclasses = []
-                for fi in fields(dc):
-                    attr = getattr(dc, fi.name) 
-                    if is_dataclass(attr):
-                        nested_dataclasses.append(attr)
-                
-                if len(nested_dataclasses) > 0:
-                    _convert(*nested_dataclasses)
-                    return
+        # process the dataclasses that were nested
+        # by assumption these are non-nested dataclasses
+        for dc in nested_dataclasses:
 
-                # otherwise it must be a pure dataclass by design
-                found = set()
-                for fi in rem_fields.values():
-                    if isinstance(dc, fi.type.__origin__):
-                        setattr(config, fi.name, dc)
-                        found.add(fi.name)
-                for name in found:
-                    del rem_fields[name]
+            # check the fields that are yet to be populated
+            found_field = False
+            for fi in rem_fields.values():
 
-        _convert(*dataclasses)
+                # check if it is an AccelerationFrameworkConfig field
+                if isinstance(dc, fi.type.__origin__):
+                    found_field = True
+                    break
+
+            if not found_field:
+                raise ValueError(
+                    f"dataclass '{dc}' cannot be placed into AccelerationFrameworkConfig."
+                )
+
+            # assign the dataclass
+            setattr(config, fi.name, dc)
+            del rem_fields[fi.name] # remove the field
+
         return config
 
     def get_framework(self):
@@ -125,6 +189,22 @@ class AccelerationFrameworkConfig:
 
             r[path[-1]] = d
 
+        # helper function to convert annotations
+        def _manage_annotation(metadata):
+            if len(metadata) == 0:
+                raise ValueError(
+                    "All AccelerationFrameworkConfig fields must be annotated to be "
+                    "parsed."
+                )
+            # handle the prefix path
+            prefix_path = tuple(metadata[0].split('.')) # split into type
+
+            annotation = None
+            if len(metadata) >= 2:
+                annotation = metadata[1]
+
+            return prefix_path, annotation
+
         # parse each field
         already_set = set()
         for fi in fields(self):
@@ -132,8 +212,12 @@ class AccelerationFrameworkConfig:
             if datacls:
                 # this is the documented way to get annotations
                 # https://docs.python.org/3/library/typing.html#typing.Annotated
-                prefix_path = fi.type.__metadata__
-                if prefix_path in already_set:
+                annotate: AccelerationAnnotation
+                prefix_path, annotate = _manage_annotation(fi.type.__metadata__)
+                if (
+                    annotate == AccelerationAnnotation.SINGLE and
+                    prefix_path in already_set
+                ):
                     raise ValueError(f"configuration path '{prefix_path}' already occupied.")
 
                 path = prefix_path + (fi.name,)

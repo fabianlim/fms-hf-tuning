@@ -41,16 +41,16 @@ from tuning.config.tracker_configs import (
     FileLoggingTrackerConfig,
     TrackerConfigFactory,
 )
-from tuning.config.acceleration_configs import (
-    QuantizedLoraConfig,
-    FusedOpsAndKernelsConfig
-)
 from tuning.data import tokenizer_data_utils
 from tuning.trackers.tracker_factory import get_tracker
 from tuning.trainercontroller import TrainerControllerCallback
 from tuning.utils.config_utils import get_hf_peft_config
 from tuning.utils.data_type_utils import get_torch_dtype
-from tuning.config.acceleration_configs import AccelerationFrameworkConfig
+from tuning.config.acceleration_configs import (
+    AccelerationFrameworkConfig,
+    QuantizedLoraConfig,
+    FusedOpsAndKernelsConfig
+)
 
 
 def train(
@@ -70,7 +70,7 @@ def train(
         configs.AccelerationFrameworkArguments
     ] = None,
     quantized_lora_config: Optional[QuantizedLoraConfig] = None,
-    foak_args: Optional[FusedOpsAndKernelsConfig] = None,
+    fusedops_kernels_config: Optional[FusedOpsAndKernelsConfig] = None,
 ):
     """Call the SFTTrainer
 
@@ -93,8 +93,8 @@ def train(
                               or TrainerControllers. Callbacks associated with \
                               tracker with automatically be added.
         exp_metadata: Dict of key value pairs passed to train to be recoreded by the tracker.
-        acceleration_framework_args: configs.AccelerationFrameworkArguments \
-            for controlling acceleration framework
+        quantized_lora_config: tuning.config.acceleration_configs.QuantizedLoraConfig \
+        fusedops_kernels_config: tuning.config.acceleration_configs.FusedOpsAndKernelsConfig \
     """
 
     logger = logging.get_logger("sft_trainer")
@@ -143,7 +143,7 @@ def train(
         trainer_callbacks.append(additional_callbacks)
 
     framework = AccelerationFrameworkConfig.from_dataclasses(
-        quantized_lora_config, foak_args
+        quantized_lora_config, fusedops_kernels_config
     ).get_framework()
 
     model_loader = AutoModelForCausalLM.from_pretrained
@@ -356,7 +356,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
         file_logger_config,
         aim_config,
         quantized_lora_config,
-        foak_config, 
+        fusedops_kernels_config, 
         additional,
         _,
     ) = parser.parse_args_into_dataclasses(return_remaining_strings=True)
@@ -402,7 +402,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
         exp_metadata=metadata,
         acceleration_framework_args=acceleration_framework_args,
         quantized_lora_config=quantized_lora_config,
-        foak_args=foak_config,
+        fusedops_kernels_config=fusedops_kernels_config,
     )
 
 
