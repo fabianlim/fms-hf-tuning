@@ -23,6 +23,7 @@ import warnings
 if is_fms_accelerate_available():
     # Third Party
     from fms_acceleration import AccelerationFramework  # pylint: disable=import-error
+    from fms_acceleration.framework import KEY_PLUGINS
 
 # DESIGN OF FMS CONFIGS:
 # - FMS will have differnt configs (probably one (or more) / plugin).
@@ -124,10 +125,18 @@ class AccelerationFrameworkConfig:
         # - each dc in dataclasses is a nested dataclass.
         # - each dc.field in dc is a non-nested dataclass.
 
+        if len(dataclasses) == 0:
+            raise ValueError(
+                "AccelerationFrameworkConfig construction requires at least one dataclass."
+            )
+
         # first unroll all the dataclases into a single level
         nested_dataclasses = []
         for dc in dataclasses:
-            # make sure that it every field is a dataclss
+            if dc is None:
+                continue
+
+            # make sure that it every field is a dataclass
             for fi in fields(dc):
                 attr = getattr(dc, fi.name) 
                 if attr is None:
@@ -219,7 +228,7 @@ class AccelerationFrameworkConfig:
                     annotate.standalone and
                     prefix_path in already_set
                 ):
-                    raise ValueError(f"configuration path '{prefix_path}' already occupied.")
+                    raise ValueError(f"Configuration path '{'.'.join(prefix_path)}' already has one standalone config.")
 
                 if annotate.experimental:
                     warnings.warn(
@@ -249,8 +258,8 @@ class AccelerationFrameworkConfig:
 
         return configuration_contents
 
-    def to_yaml(self, filename: str, top_level_key: str = 'plugins'):
+    def to_yaml(self, filename: str):
         "convert a valid AccelerationConfig dataclass into a yaml"
         configuration_contents = self.to_dict()
         with open(filename, "w") as f:
-            yaml.dump({top_level_key: configuration_contents}, f)
+            yaml.dump({KEY_PLUGINS: configuration_contents}, f)

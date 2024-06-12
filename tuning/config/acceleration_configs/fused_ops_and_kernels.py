@@ -17,28 +17,6 @@ from dataclasses import dataclass
 from typing import List
 from .utils import EnsureTypes, ensure_nested_dataclasses_initialized
 
-@dataclass
-class FusedOpsAndKernelsConfig:
-
-    # fused lora ops
-    fused_lora: "FusedLoraConfig" = None
-
-    # fast kernels
-    fast_kernels: "FastKernelsConfig" = None
-
-    def __post_init__(self):
-        if (
-            (self.fused_lora is not None and self.fast_kernels is None)
-            or
-            (self.fused_lora is None and self.fast_kernels is not None)
-        ):
-            raise ValueError(
-                'fused lora and fast_kernels must be used together. '
-                'This restriction may be relaxed in the future.'
-            )
-
-        # ensure nested dataclasses initialized
-        ensure_nested_dataclasses_initialized(self)
 
 @dataclass
 class FusedLoraConfig(List):
@@ -98,3 +76,26 @@ class FastKernelsConfig(List):
                 'fast_loss, fast_rms_layernorm and fast_rope_embedding must be enabled '
                 'together. This restriction may be relaxed in the future.'
             )
+
+@dataclass
+class FusedOpsAndKernelsConfig:
+
+    # fused lora ops
+    fused_lora: FusedLoraConfig = None
+
+    # fast kernels
+    fast_kernels: FastKernelsConfig = None
+
+    def __post_init__(self):
+        if (
+            (self.fused_lora is not None and self.fast_kernels is None)
+            or
+            (self.fused_lora is None and self.fast_kernels is not None)
+        ):
+            raise ValueError(
+                'fused lora and fast_kernels must be used together. '
+                'This restriction may be relaxed in the future.'
+            )
+
+        # ensure nested dataclasses initialized
+        ensure_nested_dataclasses_initialized(self)

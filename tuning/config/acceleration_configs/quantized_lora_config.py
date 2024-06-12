@@ -17,21 +17,6 @@ from dataclasses import dataclass
 from typing import List
 from .utils import  EnsureTypes, ensure_nested_dataclasses_initialized
 
-@dataclass
-class QuantizedLoraConfig:
-
-    # to use auto_gptq 4bit lora base layers
-    auto_gptq: "AutoGPTQLoraConfig" = None
-
-    # to use auto_gptq 4bit lora base layers
-    bnb_qlora: "BNBQLoraConfig" = None
-
-    def __post_init__(self):
-        if self.auto_gptq is None and self.bnb_qlora is None:
-            raise ValueError('at least one quantized config has to be specified.')
-            
-        # ensure nested dataclasses initialized
-        ensure_nested_dataclasses_initialized(self)
 
 @dataclass
 class AutoGPTQLoraConfig(List):
@@ -78,3 +63,18 @@ class BNBQLoraConfig(List):
         if self.quant_type not in ['nf4', 'fp4']:
             raise ValueError("quant_type can only be either 'nf4' or 'fp4.")
 
+@dataclass
+class QuantizedLoraConfig:
+
+    # to use auto_gptq 4bit lora base layers
+    auto_gptq: AutoGPTQLoraConfig = None
+
+    # to use auto_gptq 4bit lora base layers
+    bnb_qlora: BNBQLoraConfig = None
+
+    def __post_init__(self):
+        if self.auto_gptq is None and self.bnb_qlora is None:
+            raise ValueError('at least one quantized config has to be specified.')
+            
+        # ensure nested dataclasses initialized
+        ensure_nested_dataclasses_initialized(self)

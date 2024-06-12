@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Type
+from typing import Type, Dict, get_type_hints
 
 from dataclasses import fields
 from transformers.hf_argparser import string_to_bool, DataClass
 
 def ensure_nested_dataclasses_initialized(dataclass: DataClass):
+    type_hints: Dict[str, type] = get_type_hints(dataclass)
     for f in fields(dataclass):
-        nested_type = f.type
+        nested_type = type_hints[f.name]
         values = getattr(dataclass, f.name)
         if values is not None:
             values = nested_type(*values)
