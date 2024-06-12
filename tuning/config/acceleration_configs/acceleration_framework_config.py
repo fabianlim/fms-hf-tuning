@@ -55,7 +55,7 @@ if is_fms_accelerate_available():
 #   use-case dataclass that violates these rules.
 
 # these are optional annotations that describe different behavior
-class AccelerationAnnotation:
+class AccelerationAnnotation(Enum):
 
     # if it can only exist alone in its path
     PATH_SINGLE = 1
@@ -187,7 +187,7 @@ class AccelerationFrameworkConfig:
         already_set = set()
         for fi in fields(self):
             datacls = getattr(self, fi.name)
-            if datacls:
+            if datacls is not None:
                 # this is the documented way to get annotations
                 # https://docs.python.org/3/library/typing.html#typing.Annotated
                 annotate: AccelerationAnnotation

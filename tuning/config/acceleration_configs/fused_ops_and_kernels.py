@@ -31,7 +31,7 @@ class FusedOpsAndKernelsConfig:
     def __post_init__(self):
         if (
             (self.fused_lora is not None and self.fast_kernels is None)
-            and
+            or
             (self.fused_lora is None and self.fast_kernels is not None)
         ):
             raise ValueError(
