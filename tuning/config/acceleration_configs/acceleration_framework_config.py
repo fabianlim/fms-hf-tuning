@@ -54,8 +54,11 @@ if is_fms_accelerate_available():
 # - An Acceleration Config is valid only if it does not have any 
 #   use-case dataclass that violates these rules.
 
+# these are optional annotations that describe different behavior
 class AccelerationAnnotation:
-    SINGLE = 1
+
+    # if it can only exist alone in its path
+    PATH_SINGLE = 1
 
 @dataclass
 class AccelerationFrameworkConfig:
@@ -63,11 +66,11 @@ class AccelerationFrameworkConfig:
 
     # each field will a single-level use case dataclass
     auto_gptq: Annotated[
-        AutoGPTQLoraConfig, "peft.quantization", AccelerationAnnotation.SINGLE
+        AutoGPTQLoraConfig, "peft.quantization", AccelerationAnnotation.PATH_SINGLE
     ] = None
 
     bitsandbytes: Annotated[
-        BNBQLoraConfig, "peft.quantization", AccelerationAnnotation.SINGLE
+        BNBQLoraConfig, "peft.quantization", AccelerationAnnotation.PATH_SINGLE
     ] = None
     
     fused_lora: Annotated[FusedLoraConfig, "peft.quantization"] = None
@@ -86,31 +89,6 @@ class AccelerationFrameworkConfig:
         # - each dc in dataclasses is a nested dataclass.
         # - each dc.field in dc is a non-nested dataclass.
 
-        # def _convert(*dcs: Type):
-        #     for dc in dcs:
-
-        #         # collect all the fields and put 
-        #         nested_dataclasses = []
-        #         for fi in fields(dc):
-        #             attr = getattr(dc, fi.name) 
-        #             if is_dataclass(attr):
-        #                 nested_dataclasses.append(attr)
-        #         
-        #         if len(nested_dataclasses) > 0:
-        #             raise Exception('this is impossible')
-        #             _convert(*nested_dataclasses)
-        #             return
-
-        #         # otherwise it must be a pure dataclass by design
-        #         found = set()
-        #         for fi in rem_fields.values():
-        #             if isinstance(dc, fi.type.__origin__):
-        #                 setattr(config, fi.name, dc)
-        #                 found.add(fi.name)
-        #         for name in found:
-        #             del rem_fields[name]
-
-        # _convert(*dataclasses)
 
         # first unroll all the dataclases into a single level
         nested_dataclasses = []
@@ -215,7 +193,7 @@ class AccelerationFrameworkConfig:
                 annotate: AccelerationAnnotation
                 prefix_path, annotate = _manage_annotation(fi.type.__metadata__)
                 if (
-                    annotate == AccelerationAnnotation.SINGLE and
+                    annotate == AccelerationAnnotation.PATH_SINGLE and
                     prefix_path in already_set
                 ):
                     raise ValueError(f"configuration path '{prefix_path}' already occupied.")

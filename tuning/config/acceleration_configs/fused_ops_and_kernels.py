@@ -14,6 +14,8 @@
 
 
 from dataclasses import dataclass
+from typing import List
+from .utils import EnsureTypes, ensure_dataclasses_initialized
 
 # to use install fms_acceleration_foak
 
@@ -37,8 +39,14 @@ class FusedOpsAndKernelsConfig:
                 'This restriction may be relaxed in the future.'
             )
 
+        # ensure nested dataclasses initialized
+        ensure_dataclasses_initialized(self)
+
 @dataclass
-class FusedLoraConfig:
+class FusedLoraConfig(List):
+
+    # to help the HfArgumentParser arrive at correct types
+    __args__ = [EnsureTypes(str, bool)]
 
     # load unsloth optimizations for these 4bit base layer weights.
     # currently only support "auto_gptq" and "bitsandbytes"
@@ -48,6 +56,9 @@ class FusedLoraConfig:
     fused_lora: bool = False
 
     def __post_init__(self):
+
+        # reset for another parse
+        self.__args__[0].reset()
 
         if (
             self.base_layer is not None and 
@@ -63,7 +74,10 @@ class FusedLoraConfig:
             )
 
 @dataclass
-class FastKernelsConfig:
+class FastKernelsConfig(List):
+
+    # to help the HfArgumentParser arrive at correct types
+    __args__ = [EnsureTypes(bool, bool, bool)]
 
     # fast loss triton kernels
     fast_loss: bool = False
@@ -75,6 +89,10 @@ class FastKernelsConfig:
     fast_rope_embeddings: bool = False
 
     def __post_init__(self):
+
+        # reset for another parse
+        self.__args__[0].reset()
+
         if not (
             self.fast_loss == self.fast_rsm_layernorm == self.fast_rope_embeddings
         ):
