@@ -16,7 +16,6 @@ from typing import Type
 
 from dataclasses import fields
 from transformers.hf_argparser import string_to_bool, DataClass
-from itertools import cycle
 
 def ensure_nested_dataclasses_initialized(dataclass: DataClass):
     for f in fields(dataclass):
@@ -34,9 +33,14 @@ class EnsureTypes:
         self.reset()
 
     def reset(self):
-        self.indices = cycle(range(len(self.types)))
+        self.cnt = 0
 
     def __call__(self, val):
-        for i in self.indices:
-            t = self.types[i]
-            return t(val)
+        if self.cnt >= len(self.types):
+            raise ValueError(
+                "EnsureTypes require 'reset' to be called to be re-used."
+            )
+
+        t = self.types[self.cnt]
+        self.cnt += 1
+        return t(val)
