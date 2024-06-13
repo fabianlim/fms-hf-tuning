@@ -36,6 +36,11 @@ import transformers
 
 # Local
 from tuning.config import configs, peft_config
+from tuning.config.acceleration_configs import (
+    AccelerationFrameworkConfig,
+    FusedOpsAndKernelsConfig,
+    QuantizedLoraConfig,
+)
 from tuning.config.tracker_configs import (
     AimConfig,
     FileLoggingTrackerConfig,
@@ -46,11 +51,6 @@ from tuning.trackers.tracker_factory import get_tracker
 from tuning.trainercontroller import TrainerControllerCallback
 from tuning.utils.config_utils import get_hf_peft_config
 from tuning.utils.data_type_utils import get_torch_dtype
-from tuning.config.acceleration_configs import (
-    AccelerationFrameworkConfig,
-    QuantizedLoraConfig,
-    FusedOpsAndKernelsConfig
-)
 
 
 def train(
@@ -325,7 +325,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
             FileLoggingTrackerConfig,
             AimConfig,
             QuantizedLoraConfig,
-            FusedOpsAndKernelsConfig
+            FusedOpsAndKernelsConfig,
         )
     )
     parser.add_argument(
@@ -351,7 +351,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
         file_logger_config,
         aim_config,
         quantized_lora_config,
-        fusedops_kernels_config, 
+        fusedops_kernels_config,
         additional,
         _,
     ) = parser.parse_args_into_dataclasses(return_remaining_strings=True)
