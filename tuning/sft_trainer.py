@@ -46,11 +46,11 @@ from tuning.trackers.tracker_factory import get_tracker
 from tuning.trainercontroller import TrainerControllerCallback
 from tuning.utils.config_utils import get_hf_peft_config
 from tuning.utils.data_type_utils import get_torch_dtype
-from tuning.utils.import_utils import is_fms_accelerate_available
-
-if is_fms_accelerate_available():
-    # Third Party
-    from fms_acceleration import AccelerationFramework  # pylint: disable=import-error
+from tuning.config.acceleration_configs import (
+    AccelerationFrameworkConfig,
+    QuantizedLoraConfig,
+    FusedOpsAndKernelsConfig
+)
 
 
 def train(
@@ -66,9 +66,8 @@ def train(
     ),
     additional_callbacks: Optional[List[TrainerCallback]] = None,
     exp_metadata: Optional[Dict] = None,
-    acceleration_framework_args: Optional[
-        configs.AccelerationFrameworkArguments
-    ] = None,
+    quantized_lora_config: Optional[QuantizedLoraConfig] = None,
+    fusedops_kernels_config: Optional[FusedOpsAndKernelsConfig] = None,
 ):
     """Call the SFTTrainer
 
@@ -91,27 +90,11 @@ def train(
                               or TrainerControllers. Callbacks associated with \
                               tracker with automatically be added.
         exp_metadata: Dict of key value pairs passed to train to be recoreded by the tracker.
-        acceleration_framework_args: configs.AccelerationFrameworkArguments \
-            for controlling acceleration framework
+        quantized_lora_config: tuning.config.acceleration_configs.QuantizedLoraConfig \
+        fusedops_kernels_config: tuning.config.acceleration_configs.FusedOpsAndKernelsConfig \
     """
 
     logger = logging.get_logger("sft_trainer")
-
-    framework = None
-    if (
-        acceleration_framework_args is not None
-        and acceleration_framework_args.acceleration_framework_config_file is not None
-    ):
-        if is_fms_accelerate_available():
-            framework = AccelerationFramework(
-                acceleration_framework_args.acceleration_framework_config_file
-            )
-        else:
-            raise ValueError(
-                "Specified acceleration framework config "
-                f"'{acceleration_framework_args.acceleration_framework_config_file}', "
-                "but fms_acceleration package not available"
-            )
 
     # Validate parameters
     if (not isinstance(train_args.num_train_epochs, (float, int))) or (
@@ -155,6 +138,10 @@ def train(
     # Add any extra callback if passed by users
     if additional_callbacks is not None:
         trainer_callbacks.append(additional_callbacks)
+
+    framework = AccelerationFrameworkConfig.from_dataclasses(
+        quantized_lora_config, fusedops_kernels_config
+    ).get_framework()
 
     model_loader = AutoModelForCausalLM.from_pretrained
     if framework is not None and framework.requires_custom_loading:
@@ -333,11 +320,12 @@ def main(**kwargs):  # pylint: disable=unused-argument
             configs.DataArguments,
             configs.TrainingArguments,
             configs.TrainerControllerArguments,
-            configs.AccelerationFrameworkArguments,
             peft_config.LoraConfig,
             peft_config.PromptTuningConfig,
             FileLoggingTrackerConfig,
             AimConfig,
+            QuantizedLoraConfig,
+            FusedOpsAndKernelsConfig
         )
     )
     parser.add_argument(
@@ -358,11 +346,12 @@ def main(**kwargs):  # pylint: disable=unused-argument
         data_args,
         training_args,
         trainer_controller_args,
-        acceleration_framework_args,
         lora_config,
         prompt_tuning_config,
         file_logger_config,
         aim_config,
+        quantized_lora_config,
+        fusedops_kernels_config, 
         additional,
         _,
     ) = parser.parse_args_into_dataclasses(return_remaining_strings=True)
@@ -406,7 +395,8 @@ def main(**kwargs):  # pylint: disable=unused-argument
         tracker_configs=combined_tracker_configs,
         additional_callbacks=None,
         exp_metadata=metadata,
-        acceleration_framework_args=acceleration_framework_args,
+        quantized_lora_config=quantized_lora_config,
+        fusedops_kernels_config=fusedops_kernels_config,
     )
 
 
