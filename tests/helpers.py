@@ -43,5 +43,5 @@ def causal_lm_train_kwargs(train_kwargs):
         training_args,
         lora_config
         if train_kwargs.get("peft_method") == "lora"
-        else prompt_tuning_config,
+        else (None if train_kwargs.get("peft_method") == "" else prompt_tuning_config,),
     )
