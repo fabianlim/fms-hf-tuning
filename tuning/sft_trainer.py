@@ -31,6 +31,7 @@ from transformers import (
     LlamaTokenizer,
     LlamaTokenizerFast,
     TrainerCallback,
+    DataCollatorForSeq2Seq,
 )
 from transformers.utils import is_accelerate_available, logging
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
@@ -160,17 +161,28 @@ def train(
     if framework is not None and framework.requires_custom_loading:
         model_loader = framework.model_loader  # drop-in new loader
     model_load_time = time.time()
-    model = model_loader(
+    from instructlab.dolomite.hf_models import GPTDolomiteForCausalLM
+    from instructlab.training.utils import apply_gradient_checkpointing
+    model = GPTDolomiteForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=train_args.cache_dir,
         torch_dtype=get_torch_dtype(model_args.torch_dtype),
         attn_implementation="flash_attention_2" if model_args.use_flash_attn else None,
+        use_padding_free_transformer=True,
+    )
+    block_name = model._no_split_modules[0]
+    apply_gradient_checkpointing(
+        model,
+        block_name=block_name,
+        use_reentrant=True,  # this should be the HF default mode
     )
 
+    from instructlab.training.tokenizer_utils import setup_tokenizer
+    tokenizer = setup_tokenizer(model_args.model_name_or_path)
     # TODO: Move these to a config as well
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.model_name_or_path, cache_dir=train_args.cache_dir, use_fast=True
-    )
+    # tokenizer = AutoTokenizer.from_pretrained(
+    #     model_args.model_name_or_path, cache_dir=train_args.cache_dir, use_fast=True
+    # )
 
     # Calculate and save additional metrics to track later.
     additional_metrics["model_load_time"] = time.time() - model_load_time
@@ -198,9 +210,9 @@ def train(
     # The [2:] here applies if response template has \n prefix, it is needed to strip \n,
     # otherwise template is not found. We will create issue to clean this out after we discuss
     # data formats and collators we will support.
-    response_template_ids = tokenizer.encode(
-        data_args.response_template, add_special_tokens=False
-    )[2:]
+    # response_template_ids = tokenizer.encode(
+    #     data_args.response_template, add_special_tokens=False
+    # )[2:]
 
     max_seq_length = min(train_args.max_seq_length, tokenizer.model_max_length)
     logger.info("Max sequence length is %s", max_seq_length)
@@ -243,52 +255,57 @@ def train(
         packing = True
     else:
         logger.info("Packing is set to False")
-        if data_args.response_template is None:
-            # TODO: Fix this, currently unreachable due to crashing in batch encoding tokenization
-            # We should do this validation up front, then do the encoding, then handle the collator
-            raise ValueError("Response template is None, needs to be set for training")
-        data_collator = DataCollatorForCompletionOnlyLM(
-            response_template_ids,
-            tokenizer=tokenizer,
-            ignore_index=configs.IGNORE_INDEX,
+        # if data_args.response_template is None:
+        #     # TODO: Fix this, currently unreachable due to crashing in batch encoding tokenization
+        #     # We should do this validation up front, then do the encoding, then handle the collator
+        #     raise ValueError("Response template is None, needs to be set for training")
+        # data_collator = DataCollatorForCompletionOnlyLM(
+        #     response_template_ids,
+        #     tokenizer=tokenizer,
+        #     ignore_index=configs.IGNORE_INDEX,
+        # )
+        data_collator = DataCollatorForSeq2Seq(
+            tokenizer=tokenizer, padding=True, max_length=max_seq_length
         )
         packing = False
 
     # Currently we support formatted datasets with single sequence instances.
-    if not (data_args.dataset_text_field or data_args.data_formatter_template):
-        raise ValueError(
-            "dataset_text_field and data_formatter_template are None. \
-                            One of them needs to be set for training"
-        )
-    # Only one of dataset_text_field or data_formatter_template should be set.
-    if data_args.dataset_text_field and data_args.data_formatter_template:
-        raise ValueError(
-            "dataset_text_field and data_formatter_template are both set,\
-                but are mutually exclusive options"
-        )
+    # if not (data_args.dataset_text_field or data_args.data_formatter_template):
+    #     raise ValueError(
+    #         "dataset_text_field and data_formatter_template are None. \
+    #                         One of them needs to be set for training"
+    #     )
+    # # Only one of dataset_text_field or data_formatter_template should be set.
+    # if data_args.dataset_text_field and data_args.data_formatter_template:
+    #     raise ValueError(
+    #         "dataset_text_field and data_formatter_template are both set,\
+    #             but are mutually exclusive options"
+    #     )
 
     # load the data by parsing JSON
     data_files = {"train": data_args.training_data_path}
-    if data_args.validation_data_path:
-        data_files["validation"] = data_args.validation_data_path
+    # if data_args.validation_data_path:
+    #     data_files["validation"] = data_args.validation_data_path
 
-    format_dataset = lambda example: {  # pylint: disable=unnecessary-lambda-assignment
-        f"{data_args.dataset_text_field}": example[f"{data_args.dataset_text_field}"]
-        + tokenizer.eos_token
-    }
+    # format_dataset = lambda example: {  # pylint: disable=unnecessary-lambda-assignment
+    #     f"{data_args.dataset_text_field}": example[f"{data_args.dataset_text_field}"]
+    #     + tokenizer.eos_token
+    # }
 
     json_dataset = datasets.load_dataset("json", data_files=data_files)
-    if data_args.data_formatter_template:
-        (
-            formatted_train_dataset,
-            data_args.dataset_text_field,
-        ) = apply_custom_formatting_template(
-            json_dataset["train"],
-            data_args.data_formatter_template,
-            tokenizer.eos_token,
-        )
-    else:
-        formatted_train_dataset = json_dataset["train"].map(format_dataset)
+    formatted_train_dataset = json_dataset['train']
+    
+    # if data_args.data_formatter_template:
+    #     (
+    #         formatted_train_dataset,
+    #         data_args.dataset_text_field,
+    #     ) = apply_custom_formatting_template(
+    #         json_dataset["train"],
+    #         data_args.data_formatter_template,
+    #         tokenizer.eos_token,
+    #     )
+    # else:
+    #     formatted_train_dataset = json_dataset["train"].map(format_dataset)
     logger.info("Training dataset length is %s", len(formatted_train_dataset))
 
     formatted_validation_dataset = None
@@ -322,11 +339,13 @@ def train(
         eval_dataset=formatted_validation_dataset,
         packing=packing,
         data_collator=data_collator,
-        dataset_text_field=data_args.dataset_text_field,
+        # dataset_text_field=data_args.dataset_text_field,
+        dataset_text_field='input_ids',
         args=train_args,
         max_seq_length=max_seq_length,
         callbacks=trainer_callbacks,
         peft_config=peft_config,
+        dataset_kwargs={'skip_prepare_dataset':True},
     )
 
     # We track additional metrics and experiment metadata after trainer object creation
