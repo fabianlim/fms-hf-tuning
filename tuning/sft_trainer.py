@@ -178,6 +178,7 @@ def train(
     )
 
     from instructlab.training.tokenizer_utils import setup_tokenizer
+    from instructlab.training.token_dataset import setup_dataset
     tokenizer = setup_tokenizer(model_args.model_name_or_path)
     # TODO: Move these to a config as well
     # tokenizer = AutoTokenizer.from_pretrained(
@@ -283,7 +284,7 @@ def train(
     #     )
 
     # load the data by parsing JSON
-    data_files = {"train": data_args.training_data_path}
+    ## data_files = {"train": data_args.training_data_path}
     # if data_args.validation_data_path:
     #     data_files["validation"] = data_args.validation_data_path
 
@@ -292,8 +293,9 @@ def train(
     #     + tokenizer.eos_token
     # }
 
-    json_dataset = datasets.load_dataset("json", data_files=data_files)
-    formatted_train_dataset = json_dataset['train']
+    ## json_dataset = datasets.load_dataset("json", data_files=data_files)
+    ## formatted_train_dataset = json_dataset['train']
+    formatted_train_dataset = setup_dataset(data_args.training_data_path)
     
     # if data_args.data_formatter_template:
     #     (
@@ -307,6 +309,30 @@ def train(
     # else:
     #     formatted_train_dataset = json_dataset["train"].map(format_dataset)
     logger.info("Training dataset length is %s", len(formatted_train_dataset))
+    import torch
+
+    from instructlab.training.multipack_sampler import find_packing_max_batch_len_and_grad_accum
+    from instructlab.training.token_dataset import setup_dataloader
+    packing_max_batch_len, grad_accum = find_packing_max_batch_len_and_grad_accum(
+        num_gpus=torch.distributed.get_world_size(),
+        avg_sample_len=formatted_train_dataset.get_lengths().mean(),
+        effective_batch_size=128,
+        max_batch_len_per_gpu=60000,
+        is_padding=True,
+        dataset=formatted_train_dataset,
+        pad_id=tokenizer.pad_token_id,
+        seed=42,
+    )
+
+    train_loader = setup_dataloader(
+        formatted_train_dataset,
+        tokenizer.pad_token_id,
+        num_workers=8,
+        is_granite=True,
+        max_batch_len=60000,
+        packing_max_batch_len=packing_max_batch_len,
+        seed=42,
+    )
 
     formatted_validation_dataset = None
     if data_args.validation_data_path:
@@ -347,6 +373,18 @@ def train(
         peft_config=peft_config,
         dataset_kwargs={'skip_prepare_dataset':True},
     )
+
+    def get_train_dataloader(self):
+        self.accelerator.even_batches = False
+        # return self.accelerator.prepare(train_loader)
+        return train_loader
+
+    from types import MethodType
+    trainer.get_train_dataloader = MethodType(get_train_dataloader, trainer)
+
+    def floating_point_ops(self, inputs):
+        return 0
+    trainer.floating_point_ops = MethodType(floating_point_ops, trainer)
 
     # We track additional metrics and experiment metadata after trainer object creation
     # this ensure that the process is not repeated multiple times for FSDP runs.
