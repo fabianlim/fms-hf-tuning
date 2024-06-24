@@ -323,6 +323,7 @@ def train(
         pad_id=tokenizer.pad_token_id,
         seed=42,
     )
+    train_args.__dict__['gradient_accumulation_steps'] = grad_accum
 
     train_loader = setup_dataloader(
         formatted_train_dataset,
@@ -373,8 +374,37 @@ def train(
         peft_config=peft_config,
         dataset_kwargs={'skip_prepare_dataset':True},
     )
+    import numpy as np
 
     def get_train_dataloader(self):
+        _old = train_loader.collate_fn
+        def collate_fn(self, *args, **kwargs):
+            d = _old(*args, **kwargs)
+            d.pop("num_loss_counted_tokens")
+            return d
+
+        max_batch_len=60000
+        def pad_collate_fn(self, batch):
+            lens = np.array([len(item["input_ids"]) for item in batch])
+
+            cumsum_lens = np.cumsum(lens)
+            valid_up_to = int((cumsum_lens < max_batch_len).sum())
+            total_len = cumsum_lens[valid_up_to - 1]
+
+            batch = batch[:valid_up_to]
+            input_ids = [x["input_ids"].tolist() for x in batch]
+            labels = [x["labels"].tolist() for x in batch]
+            num_loss_counted_tokens = sum(
+                [(x["labels"] != -100).sum().item() for x in batch]
+            )
+
+            return {
+                "input_ids": input_ids,
+                "labels": labels,
+            }
+
+        # train_loader.collate_fn = MethodType(collate_fn, train_loader)
+        train_loader.collate_fn = MethodType(pad_collate_fn, train_loader)
         self.accelerator.even_batches = False
         # return self.accelerator.prepare(train_loader)
         return train_loader
