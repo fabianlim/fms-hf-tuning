@@ -170,12 +170,12 @@ def train(
         attn_implementation="flash_attention_2" if model_args.use_flash_attn else None,
         use_padding_free_transformer=True,
     )
-    block_name = model._no_split_modules[0]
-    apply_gradient_checkpointing(
-        model,
-        block_name=block_name,
-        use_reentrant=True,  # this should be the HF default mode
-    )
+    # block_name = model._no_split_modules[0]
+    # apply_gradient_checkpointing(
+    #     model,
+    #     block_name=block_name,
+    #     use_reentrant=True,  # this should be the HF default mode
+    # )
 
     from instructlab.training.tokenizer_utils import setup_tokenizer
     from instructlab.training.token_dataset import setup_dataset
@@ -313,17 +313,21 @@ def train(
 
     from instructlab.training.multipack_sampler import find_packing_max_batch_len_and_grad_accum
     from instructlab.training.token_dataset import setup_dataloader
+    effective_batch_size = 3840
     packing_max_batch_len, grad_accum = find_packing_max_batch_len_and_grad_accum(
         num_gpus=torch.distributed.get_world_size(),
         avg_sample_len=formatted_train_dataset.get_lengths().mean(),
-        effective_batch_size=128,
+        effective_batch_size=effective_batch_size,
         max_batch_len_per_gpu=60000,
-        is_padding=True,
+        is_padding=False,
         dataset=formatted_train_dataset,
         pad_id=tokenizer.pad_token_id,
         seed=42,
     )
     train_args.__dict__['gradient_accumulation_steps'] = grad_accum
+    train_args.__dict__['per_gpu_train_batch_size'] = (
+        effective_batch_size // grad_accum // torch.distributed.get_world_size()
+    )
 
     train_loader = setup_dataloader(
         formatted_train_dataset,
@@ -375,6 +379,18 @@ def train(
         dataset_kwargs={'skip_prepare_dataset':True},
     )
     import numpy as np
+
+    from torch.distributed.fsdp import MixedPrecision
+
+    trainer.accelerator.state.fsdp_plugin.set_auto_wrap_policy(model)
+    trainer.accelerator.state.fsdp_plugin.mixed_precision_policy = MixedPrecision(
+        param_dtype=torch.bfloat16,
+        reduce_dtype=torch.bfloat16,
+        buffer_dtype=torch.bfloat16,
+    )
+    # use FSDP checkpointing
+    trainer.accelerator.state.fsdp_plugin.activation_checkpointing = True
+    trainer.accelerator.native_amp = False # defer to FSDP AMP
 
     def get_train_dataloader(self):
         _old = train_loader.collate_fn
