@@ -162,7 +162,9 @@ def train(
         model_loader = framework.model_loader  # drop-in new loader
     model_load_time = time.time()
     from instructlab.dolomite.hf_models import GPTDolomiteForCausalLM
-    from instructlab.training.utils import apply_gradient_checkpointing
+    from instructlab.training.utils import (
+        apply_gradient_checkpointing, convert_loss_to_reduce_sum
+    )
     model = GPTDolomiteForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=train_args.cache_dir,
@@ -170,6 +172,7 @@ def train(
         attn_implementation="flash_attention_2" if model_args.use_flash_attn else None,
         use_padding_free_transformer=True,
     )
+    # model = convert_loss_to_reduce_sum(model, is_granite=args.is_granite)
     # block_name = model._no_split_modules[0]
     # apply_gradient_checkpointing(
     #     model,
@@ -178,8 +181,12 @@ def train(
     # )
 
     from instructlab.training.tokenizer_utils import setup_tokenizer
+    from instructlab.training.utils import retrieve_chat_template
     from instructlab.training.token_dataset import setup_dataset
-    tokenizer = setup_tokenizer(model_args.model_name_or_path)
+    CHAT_TEMPLATE, SPECIAL_TOKENS = retrieve_chat_template(
+        "/app/training/src/instructlab/training/chat_templates/ibm_generic_tmpl.py"
+    )
+    tokenizer = setup_tokenizer(model_args.model_name_or_path, SPECIAL_TOKENS, CHAT_TEMPLATE)
     # TODO: Move these to a config as well
     # tokenizer = AutoTokenizer.from_pretrained(
     #     model_args.model_name_or_path, cache_dir=train_args.cache_dir, use_fast=True
@@ -392,12 +399,13 @@ def train(
     trainer.accelerator.state.fsdp_plugin.activation_checkpointing = True
     trainer.accelerator.native_amp = False # defer to FSDP AMP
 
+    # defined at this scope
     def get_train_dataloader(self):
-        _old = train_loader.collate_fn
-        def collate_fn(self, *args, **kwargs):
-            d = _old(*args, **kwargs)
-            d.pop("num_loss_counted_tokens")
-            return d
+        # _old = train_loader.collate_fn
+        # def collate_fn(self, *args, **kwargs):
+        #     d = _old(*args, **kwargs)
+        #     d.pop("num_loss_counted_tokens")
+        #     return d
 
         max_batch_len=60000
         def pad_collate_fn(self, batch):
@@ -417,6 +425,7 @@ def train(
             return {
                 "input_ids": input_ids,
                 "labels": labels,
+                "num_loss_counted_tokens": num_loss_counted_tokens,
             }
 
         # train_loader.collate_fn = MethodType(collate_fn, train_loader)
@@ -426,8 +435,45 @@ def train(
         return train_loader
 
     from types import MethodType
+    from torch.distributed import ReduceOp, all_reduce
     trainer.get_train_dataloader = MethodType(get_train_dataloader, trainer)
 
+    # _old_model_forward = model.forward
+    # def model_forward(self, *args ,**kwargs):
+    #     loss, *rem = _old_model_forward(*args, **kwargs)
+    #     torch.distributed.breakpoint()
+    #     scaling = next(train_loader.scalings)
+    #     return loss * scaling, *rem
+    # model.forward = MethodType(model_forward, model)
+
+    # replace this with accelerate backward and try to update the loss
+    # number from the tensor pointer inside
+    _old_compute_loss = trainer.compute_loss
+    def compute_loss(self, model, inputs, return_outputs=False):
+        n = torch.distributed.get_world_size()
+        r = torch.distributed.get_rank()
+        num_loss_counted_tokens = inputs.pop("num_loss_counted_tokens")
+
+        loss = _old_compute_loss(model, inputs, return_outputs)
+
+        V = torch.zeros(1, dtype=torch.float32).to(r)
+        V[0] = num_loss_counted_tokens
+        all_reduce(V, op=ReduceOp.SUM)
+        scaling = n * num_loss_counted_tokens / V[0]
+        del V
+
+        # testing
+        # V[0] = loss * scaling
+        # all_reduce(V, op=ReduceOp.AVG)
+
+        # torch.distributed.breakpoint()
+        # scaling = next(train_loader.batch_sampler.scalings)
+        return loss * scaling
+
+    trainer.compute_loss = MethodType(compute_loss, trainer)
+
+    # patch this one the model side, but may not be needed with 
+    # RD fix
     def floating_point_ops(self, inputs):
         return 0
     trainer.floating_point_ops = MethodType(floating_point_ops, trainer)
