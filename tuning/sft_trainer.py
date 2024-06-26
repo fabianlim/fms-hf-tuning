@@ -161,24 +161,12 @@ def train(
     if framework is not None and framework.requires_custom_loading:
         model_loader = framework.model_loader  # drop-in new loader
     model_load_time = time.time()
-    from instructlab.dolomite.hf_models import GPTDolomiteForCausalLM
-    from instructlab.training.utils import (
-        apply_gradient_checkpointing, convert_loss_to_reduce_sum
-    )
-    model = GPTDolomiteForCausalLM.from_pretrained(
+    model = model_loader(
         model_args.model_name_or_path,
         cache_dir=train_args.cache_dir,
         torch_dtype=get_torch_dtype(model_args.torch_dtype),
         attn_implementation="flash_attention_2" if model_args.use_flash_attn else None,
-        use_padding_free_transformer=True,
     )
-    # model = convert_loss_to_reduce_sum(model, is_granite=args.is_granite)
-    # block_name = model._no_split_modules[0]
-    # apply_gradient_checkpointing(
-    #     model,
-    #     block_name=block_name,
-    #     use_reentrant=True,  # this should be the HF default mode
-    # )
 
     from instructlab.training.tokenizer_utils import setup_tokenizer
     from instructlab.training.utils import retrieve_chat_template
@@ -321,11 +309,13 @@ def train(
     from instructlab.training.multipack_sampler import find_packing_max_batch_len_and_grad_accum
     from instructlab.training.token_dataset import setup_dataloader
     effective_batch_size = 3840
+    # MAX_BATCH_LEN=51200 # for mistral
+    MAX_BATCH_LEN=50000 # for llama
     packing_max_batch_len, grad_accum = find_packing_max_batch_len_and_grad_accum(
         num_gpus=torch.distributed.get_world_size(),
         avg_sample_len=formatted_train_dataset.get_lengths().mean(),
         effective_batch_size=effective_batch_size,
-        max_batch_len_per_gpu=60000,
+        max_batch_len_per_gpu=MAX_BATCH_LEN,
         is_padding=False,
         dataset=formatted_train_dataset,
         pad_id=tokenizer.pad_token_id,
@@ -341,7 +331,7 @@ def train(
         tokenizer.pad_token_id,
         num_workers=8,
         is_granite=True,
-        max_batch_len=60000,
+        max_batch_len=MAX_BATCH_LEN,
         packing_max_batch_len=packing_max_batch_len,
         seed=42,
     )
@@ -396,7 +386,7 @@ def train(
         buffer_dtype=torch.bfloat16,
     )
     # use FSDP checkpointing
-    trainer.accelerator.state.fsdp_plugin.activation_checkpointing = True
+    trainer.accelerator.state.fsdp_plugin.activation_checkpointing = train_args.gradient_checkpointing
     trainer.accelerator.native_amp = False # defer to FSDP AMP
 
     # defined at this scope
@@ -407,17 +397,21 @@ def train(
         #     d.pop("num_loss_counted_tokens")
         #     return d
 
-        max_batch_len=60000
         def pad_collate_fn(self, batch):
             lens = np.array([len(item["input_ids"]) for item in batch])
 
             cumsum_lens = np.cumsum(lens)
-            valid_up_to = int((cumsum_lens < max_batch_len).sum())
-            total_len = cumsum_lens[valid_up_to - 1]
+            valid_up_to = int((cumsum_lens < MAX_BATCH_LEN).sum())
 
             batch = batch[:valid_up_to]
-            input_ids = [x["input_ids"].tolist() for x in batch]
-            labels = [x["labels"].tolist() for x in batch]
+            position_ids = []
+            for idx in range(len(batch)):
+                position_ids += list(range(len(batch[idx]['input_ids'])))
+                batch[idx]['labels'][0] = -100
+            position_ids = torch.tensor(position_ids, dtype=torch.long).unsqueeze(0)
+            input_ids = torch.cat([x['input_ids'] for x in batch]).unsqueeze(0)
+            labels = torch.cat([x['labels'] for x in batch]).unsqueeze(0)
+
             num_loss_counted_tokens = sum(
                 [(x["labels"] != -100).sum().item() for x in batch]
             )
@@ -425,6 +419,7 @@ def train(
             return {
                 "input_ids": input_ids,
                 "labels": labels,
+                "position_ids": position_ids,
                 "num_loss_counted_tokens": num_loss_counted_tokens,
             }
 
