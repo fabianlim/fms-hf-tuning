@@ -45,6 +45,7 @@ from tuning.config.acceleration_configs import (
     AccelerationFrameworkConfig,
     FusedOpsAndKernelsConfig,
     QuantizedLoraConfig,
+    PaddingFreeConfig,
 )
 from tuning.config.tracker_configs import (
     AimConfig,
@@ -79,6 +80,7 @@ def train(
     exp_metadata: Optional[Dict] = None,
     quantized_lora_config: Optional[QuantizedLoraConfig] = None,
     fusedops_kernels_config: Optional[FusedOpsAndKernelsConfig] = None,
+    padding_free_config: Optional[PaddingFreeConfig] = None,
 ):
     """Call the SFTTrainer
 
@@ -106,6 +108,7 @@ def train(
         fusedops_kernels_config: tuning.config.acceleration_configs.FusedOpsAndKernelsConfig \
             Should be used in combination with quantized_lora_config. Also currently 
             fused_lora and fast_kernels must used together (may change in future). \
+        padding_free_config: ...
     """
 
     logger = logging.get_logger("sft_trainer")
@@ -308,9 +311,13 @@ def train(
 
     from instructlab.training.multipack_sampler import find_packing_max_batch_len_and_grad_accum
     from instructlab.training.token_dataset import setup_dataloader
-    effective_batch_size = 3840
+    if padding_free_config is None:
+        raise NotImplementedError
+
+    effective_batch_size = padding_free_config.multipack.effective_batch_size
     # MAX_BATCH_LEN=51200 # for mistral
-    MAX_BATCH_LEN=50000 # for llama
+    # MAX_BATCH_LEN=50000 # for llama
+    MAX_BATCH_LEN = padding_free_config.multipack.max_number_tokens
     packing_max_batch_len, grad_accum = find_packing_max_batch_len_and_grad_accum(
         num_gpus=torch.distributed.get_world_size(),
         avg_sample_len=formatted_train_dataset.get_lengths().mean(),
@@ -389,13 +396,12 @@ def train(
     trainer.accelerator.state.fsdp_plugin.activation_checkpointing = train_args.gradient_checkpointing
     trainer.accelerator.native_amp = False # defer to FSDP AMP
 
+    if padding_free_config.loss_config is None:
+        raise NotImplementedError
+    PER_TOKEN_LOSS = padding_free_config.loss_config.token_averaged_loss
+
     # defined at this scope
     def get_train_dataloader(self):
-        # _old = train_loader.collate_fn
-        # def collate_fn(self, *args, **kwargs):
-        #     d = _old(*args, **kwargs)
-        #     d.pop("num_loss_counted_tokens")
-        #     return d
 
         def pad_collate_fn(self, batch):
             lens = np.array([len(item["input_ids"]) for item in batch])
@@ -416,12 +422,16 @@ def train(
                 [(x["labels"] != -100).sum().item() for x in batch]
             )
 
-            return {
+            d = {
                 "input_ids": input_ids,
                 "labels": labels,
                 "position_ids": position_ids,
-                "num_loss_counted_tokens": num_loss_counted_tokens,
+                # "num_loss_counted_tokens": num_loss_counted_tokens,
             }
+            if PER_TOKEN_LOSS:
+                d["num_loss_counted_tokens"] = num_loss_counted_tokens
+
+            return d
 
         # train_loader.collate_fn = MethodType(collate_fn, train_loader)
         train_loader.collate_fn = MethodType(pad_collate_fn, train_loader)
@@ -433,39 +443,33 @@ def train(
     from torch.distributed import ReduceOp, all_reduce
     trainer.get_train_dataloader = MethodType(get_train_dataloader, trainer)
 
-    # _old_model_forward = model.forward
-    # def model_forward(self, *args ,**kwargs):
-    #     loss, *rem = _old_model_forward(*args, **kwargs)
-    #     torch.distributed.breakpoint()
-    #     scaling = next(train_loader.scalings)
-    #     return loss * scaling, *rem
-    # model.forward = MethodType(model_forward, model)
+    if PER_TOKEN_LOSS:
 
-    # replace this with accelerate backward and try to update the loss
-    # number from the tensor pointer inside
-    _old_compute_loss = trainer.compute_loss
-    def compute_loss(self, model, inputs, return_outputs=False):
-        n = torch.distributed.get_world_size()
-        r = torch.distributed.get_rank()
-        num_loss_counted_tokens = inputs.pop("num_loss_counted_tokens")
+        print ("USING PER TOKEN LOSS!")
 
-        loss = _old_compute_loss(model, inputs, return_outputs)
+        # replace this with accelerate backward and try to update the loss
+        # number from the tensor pointer inside
+        _old_compute_loss = trainer.compute_loss
+        def compute_loss(self, model, inputs, return_outputs=False):
+            n = torch.distributed.get_world_size()
+            r = torch.distributed.get_rank()
+            num_loss_counted_tokens = inputs.pop("num_loss_counted_tokens")
 
-        V = torch.zeros(1, dtype=torch.float32).to(r)
-        V[0] = num_loss_counted_tokens
-        all_reduce(V, op=ReduceOp.SUM)
-        scaling = n * num_loss_counted_tokens / V[0]
-        del V
+            loss = _old_compute_loss(model, inputs, return_outputs)
 
-        # testing
-        # V[0] = loss * scaling
-        # all_reduce(V, op=ReduceOp.AVG)
+            V = torch.zeros(1, dtype=torch.float32).to(r)
+            V[0] = num_loss_counted_tokens
+            all_reduce(V, op=ReduceOp.SUM)
+            scaling = n * num_loss_counted_tokens / V[0]
+            del V
 
-        # torch.distributed.breakpoint()
-        # scaling = next(train_loader.batch_sampler.scalings)
-        return loss * scaling
+            # torch.distributed.breakpoint()
+            # scaling = next(train_loader.batch_sampler.scalings)
+            return loss * scaling
 
-    trainer.compute_loss = MethodType(compute_loss, trainer)
+        trainer.compute_loss = MethodType(compute_loss, trainer)
+    else:
+        print ('USING HF PER EXAMPLE LOSS!')
 
     # patch this one the model side, but may not be needed with 
     # RD fix
@@ -517,6 +521,7 @@ def get_parser():
             AimConfig,
             QuantizedLoraConfig,
             FusedOpsAndKernelsConfig,
+            PaddingFreeConfig,
         )
     )
     parser.add_argument(
@@ -563,6 +568,8 @@ def parse_arguments(parser, json_config=None):
             Configuration for quantized LoRA (a form of PEFT).
         FusedOpsAndKernelsConfig
             Configuration for fused operations and kernels.
+        PaddingFreeConfig
+            ....
         dict[str, str]
             Extra AIM metadata.
     """
@@ -578,6 +585,7 @@ def parse_arguments(parser, json_config=None):
             aim_config,
             quantized_lora_config,
             fusedops_kernels_config,
+            padding_free_config,
         ) = parser.parse_dict(json_config, allow_extra_keys=True)
         peft_method = json_config.get("peft_method")
         exp_metadata = json_config.get("exp_metadata")
@@ -593,6 +601,7 @@ def parse_arguments(parser, json_config=None):
             aim_config,
             quantized_lora_config,
             fusedops_kernels_config,
+            padding_free_config,
             additional,
             _,
         ) = parser.parse_args_into_dataclasses(return_remaining_strings=True)
@@ -617,6 +626,7 @@ def parse_arguments(parser, json_config=None):
         aim_config,
         quantized_lora_config,
         fusedops_kernels_config,
+        padding_free_config,
         exp_metadata,
     )
 
@@ -639,6 +649,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
             aim_config,
             quantized_lora_config,
             fusedops_kernels_config,
+            padding_free_config,
             exp_metadata,
         ) = parse_arguments(parser, job_config)
         logger.debug(
@@ -656,6 +667,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
             aim_config,
             quantized_lora_config,
             fusedops_kernels_config,
+            padding_free_config,
             exp_metadata,
         )
     except Exception as e:  # pylint: disable=broad-except
@@ -697,6 +709,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
             exp_metadata=metadata,
             quantized_lora_config=quantized_lora_config,
             fusedops_kernels_config=fusedops_kernels_config,
+            padding_free_config=padding_free_config,
         )
     except (MemoryError, OutOfMemoryError) as e:
         logger.error(traceback.format_exc())
