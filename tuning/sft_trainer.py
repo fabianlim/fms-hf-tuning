@@ -45,7 +45,7 @@ from tuning.config.acceleration_configs import (
     AccelerationFrameworkConfig,
     FusedOpsAndKernelsConfig,
     QuantizedLoraConfig,
-    PaddingFreeConfig,
+    FastAttentionConfig,
 )
 from tuning.config.tracker_configs import (
     AimConfig,
@@ -80,7 +80,7 @@ def train(
     exp_metadata: Optional[Dict] = None,
     quantized_lora_config: Optional[QuantizedLoraConfig] = None,
     fusedops_kernels_config: Optional[FusedOpsAndKernelsConfig] = None,
-    padding_free_config: Optional[PaddingFreeConfig] = None,
+    fast_attention_config: Optional[FastAttentionConfig] = None,
 ):
     """Call the SFTTrainer
 
@@ -108,7 +108,7 @@ def train(
         fusedops_kernels_config: tuning.config.acceleration_configs.FusedOpsAndKernelsConfig \
             Should be used in combination with quantized_lora_config. Also currently 
             fused_lora and fast_kernels must used together (may change in future). \
-        padding_free_config: ...
+        fast_attention_config: ...
     """
 
     logger = logging.get_logger("sft_trainer")
@@ -157,7 +157,8 @@ def train(
         trainer_callbacks.append(additional_callbacks)
 
     framework = AccelerationFrameworkConfig.from_dataclasses(
-        quantized_lora_config, fusedops_kernels_config
+        quantized_lora_config, fusedops_kernels_config,
+        fast_attention_config
     ).get_framework()
 
     model_loader = AutoModelForCausalLM.from_pretrained
@@ -171,12 +172,14 @@ def train(
         attn_implementation="flash_attention_2" if model_args.use_flash_attn else None,
     )
 
-    from instructlab.training.tokenizer_utils import setup_tokenizer
     from instructlab.training.utils import retrieve_chat_template
-    from instructlab.training.token_dataset import setup_dataset
+    # from instructlab.training.token_dataset import setup_dataset
     CHAT_TEMPLATE, SPECIAL_TOKENS = retrieve_chat_template(
         "/app/training/src/instructlab/training/chat_templates/ibm_generic_tmpl.py"
     )
+    from instructlab.training.tokenizer_utils import setup_tokenizer
+    # NOTE: can replace with the original tokenizer, because
+    # will not be used
     tokenizer = setup_tokenizer(model_args.model_name_or_path, SPECIAL_TOKENS, CHAT_TEMPLATE)
     # TODO: Move these to a config as well
     # tokenizer = AutoTokenizer.from_pretrained(
@@ -282,7 +285,7 @@ def train(
     #     )
 
     # load the data by parsing JSON
-    ## data_files = {"train": data_args.training_data_path}
+    data_files = {"train": data_args.training_data_path}
     # if data_args.validation_data_path:
     #     data_files["validation"] = data_args.validation_data_path
 
@@ -291,9 +294,9 @@ def train(
     #     + tokenizer.eos_token
     # }
 
-    ## json_dataset = datasets.load_dataset("json", data_files=data_files)
-    ## formatted_train_dataset = json_dataset['train']
-    formatted_train_dataset = setup_dataset(data_args.training_data_path)
+    json_dataset = datasets.load_dataset("json", data_files=data_files)
+    formatted_train_dataset = json_dataset['train']
+    # formatted_train_dataset = setup_dataset(data_args.training_data_path)
     
     # if data_args.data_formatter_template:
     #     (
@@ -309,39 +312,42 @@ def train(
     logger.info("Training dataset length is %s", len(formatted_train_dataset))
     import torch
 
-    from instructlab.training.multipack_sampler import find_packing_max_batch_len_and_grad_accum
-    from instructlab.training.token_dataset import setup_dataloader
-    if padding_free_config is None:
-        raise NotImplementedError
+    # from instructlab.training.multipack_sampler import find_packing_max_batch_len_and_grad_accum
+    # from instructlab.training.token_dataset import setup_dataloader
+    # if fast_attention_config is None:
+    #     raise NotImplementedError
 
-    effective_batch_size = padding_free_config.multipack.effective_batch_size
+    # effective_batch_size = fast_attention_config.multipack.effective_batch_size
     # MAX_BATCH_LEN=51200 # for mistral
     # MAX_BATCH_LEN=50000 # for llama
-    MAX_BATCH_LEN = padding_free_config.multipack.max_number_tokens
-    packing_max_batch_len, grad_accum = find_packing_max_batch_len_and_grad_accum(
-        num_gpus=torch.distributed.get_world_size(),
-        avg_sample_len=formatted_train_dataset.get_lengths().mean(),
-        effective_batch_size=effective_batch_size,
-        max_batch_len_per_gpu=MAX_BATCH_LEN,
-        is_padding=False,
-        dataset=formatted_train_dataset,
-        pad_id=tokenizer.pad_token_id,
-        seed=42,
-    )
-    train_args.__dict__['gradient_accumulation_steps'] = grad_accum
-    train_args.__dict__['per_gpu_train_batch_size'] = (
-        effective_batch_size // grad_accum // torch.distributed.get_world_size()
-    )
+    # MAX_BATCH_LEN = fast_attention_config.multipack.max_number_tokens
+    # packing_max_batch_len, grad_accum = find_packing_max_batch_len_and_grad_accum(
+    #     num_gpus=torch.distributed.get_world_size(),
+    #     avg_sample_len=formatted_train_dataset.get_lengths().mean(),
+    #     effective_batch_size=effective_batch_size,
+    #     max_batch_len_per_gpu=MAX_BATCH_LEN,
+    #     is_padding=False,
+    #     dataset=formatted_train_dataset,
+    #     pad_id=tokenizer.pad_token_id,
+    #     seed=42,
+    # )
 
-    train_loader = setup_dataloader(
-        formatted_train_dataset,
-        tokenizer.pad_token_id,
-        num_workers=8,
-        is_granite=True,
-        max_batch_len=MAX_BATCH_LEN,
-        packing_max_batch_len=packing_max_batch_len,
-        seed=42,
-    )
+    # HACK
+    train_args.__dict__['data_path'] = data_args.training_data_path
+    # train_args.__dict__['gradient_accumulation_steps'] = grad_accum
+    # train_args.__dict__['per_gpu_train_batch_size'] = (
+    #     effective_batch_size // grad_accum // torch.distributed.get_world_size()
+    # )
+
+    # train_loader = setup_dataloader(
+    #     formatted_train_dataset,
+    #     tokenizer.pad_token_id,
+    #     num_workers=8,
+    #     is_granite=True,
+    #     max_batch_len=MAX_BATCH_LEN,
+    #     packing_max_batch_len=packing_max_batch_len,
+    #     seed=42,
+    # )
 
     formatted_validation_dataset = None
     if data_args.validation_data_path:
@@ -384,66 +390,65 @@ def train(
     )
     import numpy as np
 
-    from torch.distributed.fsdp import MixedPrecision
+    # from torch.distributed.fsdp import MixedPrecision
+    # trainer.accelerator.state.fsdp_plugin.set_auto_wrap_policy(model)
+    # trainer.accelerator.state.fsdp_plugin.mixed_precision_policy = MixedPrecision(
+    #     param_dtype=torch.bfloat16,
+    #     reduce_dtype=torch.bfloat16,
+    #     buffer_dtype=torch.bfloat16,
+    # )
+    # # use FSDP checkpointing
+    # trainer.accelerator.state.fsdp_plugin.activation_checkpointing = train_args.gradient_checkpointing
+    # trainer.accelerator.native_amp = False # defer to FSDP AMP
 
-    trainer.accelerator.state.fsdp_plugin.set_auto_wrap_policy(model)
-    trainer.accelerator.state.fsdp_plugin.mixed_precision_policy = MixedPrecision(
-        param_dtype=torch.bfloat16,
-        reduce_dtype=torch.bfloat16,
-        buffer_dtype=torch.bfloat16,
-    )
-    # use FSDP checkpointing
-    trainer.accelerator.state.fsdp_plugin.activation_checkpointing = train_args.gradient_checkpointing
-    trainer.accelerator.native_amp = False # defer to FSDP AMP
-
-    if padding_free_config.loss_config is None:
-        raise NotImplementedError
-    PER_TOKEN_LOSS = padding_free_config.loss_config.token_averaged_loss
+    # if fast_attention_config.loss_config is None:
+    #     raise NotImplementedError
+    # PER_TOKEN_LOSS = fast_attention_config.loss_config.token_averaged_loss
 
     # defined at this scope
-    def get_train_dataloader(self):
+    # def get_train_dataloader(self):
 
-        def pad_collate_fn(self, batch):
-            lens = np.array([len(item["input_ids"]) for item in batch])
+    #     def pad_collate_fn(self, batch):
+    #         lens = np.array([len(item["input_ids"]) for item in batch])
 
-            cumsum_lens = np.cumsum(lens)
-            valid_up_to = int((cumsum_lens < MAX_BATCH_LEN).sum())
+    #         cumsum_lens = np.cumsum(lens)
+    #         valid_up_to = int((cumsum_lens < MAX_BATCH_LEN).sum())
 
-            batch = batch[:valid_up_to]
-            position_ids = []
-            for idx in range(len(batch)):
-                position_ids += list(range(len(batch[idx]['input_ids'])))
-                batch[idx]['labels'][0] = -100
-            position_ids = torch.tensor(position_ids, dtype=torch.long).unsqueeze(0)
-            input_ids = torch.cat([x['input_ids'] for x in batch]).unsqueeze(0)
-            labels = torch.cat([x['labels'] for x in batch]).unsqueeze(0)
+    #         batch = batch[:valid_up_to]
+    #         position_ids = []
+    #         for idx in range(len(batch)):
+    #             position_ids += list(range(len(batch[idx]['input_ids'])))
+    #             batch[idx]['labels'][0] = -100
+    #         position_ids = torch.tensor(position_ids, dtype=torch.long).unsqueeze(0)
+    #         input_ids = torch.cat([x['input_ids'] for x in batch]).unsqueeze(0)
+    #         labels = torch.cat([x['labels'] for x in batch]).unsqueeze(0)
 
-            num_loss_counted_tokens = sum(
-                [(x["labels"] != -100).sum().item() for x in batch]
-            )
+    #         num_loss_counted_tokens = sum(
+    #             [(x["labels"] != -100).sum().item() for x in batch]
+    #         )
 
-            d = {
-                "input_ids": input_ids,
-                "labels": labels,
-                "position_ids": position_ids,
-                # "num_loss_counted_tokens": num_loss_counted_tokens,
-            }
-            if PER_TOKEN_LOSS:
-                d["num_loss_counted_tokens"] = num_loss_counted_tokens
+    #         d = {
+    #             "input_ids": input_ids,
+    #             "labels": labels,
+    #             "position_ids": position_ids,
+    #             # "num_loss_counted_tokens": num_loss_counted_tokens,
+    #         }
+    #         if PER_TOKEN_LOSS:
+    #             d["num_loss_counted_tokens"] = num_loss_counted_tokens
 
-            return d
+    #         return d
 
-        # train_loader.collate_fn = MethodType(collate_fn, train_loader)
-        train_loader.collate_fn = MethodType(pad_collate_fn, train_loader)
-        self.accelerator.even_batches = False
-        # return self.accelerator.prepare(train_loader)
-        return train_loader
+    #     # train_loader.collate_fn = MethodType(collate_fn, train_loader)
+    #     train_loader.collate_fn = MethodType(pad_collate_fn, train_loader)
+    #     self.accelerator.even_batches = False
+    #     # return self.accelerator.prepare(train_loader)
+    #     return train_loader
 
     from types import MethodType
     from torch.distributed import ReduceOp, all_reduce
-    trainer.get_train_dataloader = MethodType(get_train_dataloader, trainer)
+    # trainer.get_train_dataloader = MethodType(get_train_dataloader, trainer)
 
-    if PER_TOKEN_LOSS:
+    if fast_attention_config.loss_config.token_averaged_loss:
 
         print ("USING PER TOKEN LOSS!")
 
@@ -471,11 +476,11 @@ def train(
     else:
         print ('USING HF PER EXAMPLE LOSS!')
 
-    # patch this one the model side, but may not be needed with 
-    # RD fix
-    def floating_point_ops(self, inputs):
-        return 0
-    trainer.floating_point_ops = MethodType(floating_point_ops, trainer)
+    # # patch this one the model side, but may not be needed with 
+    # # RD fix
+    # def floating_point_ops(self, inputs):
+    #     return 0
+    # trainer.floating_point_ops = MethodType(floating_point_ops, trainer)
 
     # We track additional metrics and experiment metadata after trainer object creation
     # this ensure that the process is not repeated multiple times for FSDP runs.
@@ -521,7 +526,7 @@ def get_parser():
             AimConfig,
             QuantizedLoraConfig,
             FusedOpsAndKernelsConfig,
-            PaddingFreeConfig,
+            FastAttentionConfig,
         )
     )
     parser.add_argument(
@@ -709,7 +714,7 @@ def main(**kwargs):  # pylint: disable=unused-argument
             exp_metadata=metadata,
             quantized_lora_config=quantized_lora_config,
             fusedops_kernels_config=fusedops_kernels_config,
-            padding_free_config=padding_free_config,
+            fast_attention_config=padding_free_config,
         )
     except (MemoryError, OutOfMemoryError) as e:
         logger.error(traceback.format_exc())

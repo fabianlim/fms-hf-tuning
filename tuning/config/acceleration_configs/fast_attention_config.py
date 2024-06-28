@@ -27,14 +27,22 @@ class LossConfig:
     # just put here first, 
     token_averaged_loss: bool = True
 
+@parsable_dataclass
 @dataclass
-class PaddingFreeConfig:
+class PaddingFree:
+    # just put here first, 
+    method: str = "huggingface"
 
-    # to use auto_gptq 4bit lora base layers
-    multipack: MultipackConfig = None
+@dataclass
+class FastAttentionConfig:
+
+    padding_free: PaddingFree = None
 
     # to use auto_gptq 4bit lora base layers
     loss_config: LossConfig = None
+
+    # to use auto_gptq 4bit lora base layers
+    multipack: MultipackConfig = None
 
     def __post_init__(self):
         # ensure nested dataclasses initialized
