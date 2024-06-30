@@ -312,42 +312,8 @@ def train(
     logger.info("Training dataset length is %s", len(formatted_train_dataset))
     import torch
 
-    # from instructlab.training.multipack_sampler import find_packing_max_batch_len_and_grad_accum
-    # from instructlab.training.token_dataset import setup_dataloader
-    # if fast_attention_config is None:
-    #     raise NotImplementedError
-
-    # effective_batch_size = fast_attention_config.multipack.effective_batch_size
-    # MAX_BATCH_LEN=51200 # for mistral
-    # MAX_BATCH_LEN=50000 # for llama
-    # MAX_BATCH_LEN = fast_attention_config.multipack.max_number_tokens
-    # packing_max_batch_len, grad_accum = find_packing_max_batch_len_and_grad_accum(
-    #     num_gpus=torch.distributed.get_world_size(),
-    #     avg_sample_len=formatted_train_dataset.get_lengths().mean(),
-    #     effective_batch_size=effective_batch_size,
-    #     max_batch_len_per_gpu=MAX_BATCH_LEN,
-    #     is_padding=False,
-    #     dataset=formatted_train_dataset,
-    #     pad_id=tokenizer.pad_token_id,
-    #     seed=42,
-    # )
-
     # HACK
     train_args.__dict__['data_path'] = data_args.training_data_path
-    # train_args.__dict__['gradient_accumulation_steps'] = grad_accum
-    # train_args.__dict__['per_gpu_train_batch_size'] = (
-    #     effective_batch_size // grad_accum // torch.distributed.get_world_size()
-    # )
-
-    # train_loader = setup_dataloader(
-    #     formatted_train_dataset,
-    #     tokenizer.pad_token_id,
-    #     num_workers=8,
-    #     is_granite=True,
-    #     max_batch_len=MAX_BATCH_LEN,
-    #     packing_max_batch_len=packing_max_batch_len,
-    #     seed=42,
-    # )
 
     formatted_validation_dataset = None
     if data_args.validation_data_path:
@@ -388,93 +354,6 @@ def train(
         peft_config=peft_config,
         dataset_kwargs={'skip_prepare_dataset':True},
     )
-    import numpy as np
-
-    # from torch.distributed.fsdp import MixedPrecision
-    # trainer.accelerator.state.fsdp_plugin.set_auto_wrap_policy(model)
-    # trainer.accelerator.state.fsdp_plugin.mixed_precision_policy = MixedPrecision(
-    #     param_dtype=torch.bfloat16,
-    #     reduce_dtype=torch.bfloat16,
-    #     buffer_dtype=torch.bfloat16,
-    # )
-    # # use FSDP checkpointing
-    # trainer.accelerator.state.fsdp_plugin.activation_checkpointing = train_args.gradient_checkpointing
-    # trainer.accelerator.native_amp = False # defer to FSDP AMP
-
-    # if fast_attention_config.loss_config is None:
-    #     raise NotImplementedError
-    # PER_TOKEN_LOSS = fast_attention_config.loss_config.token_averaged_loss
-
-    # defined at this scope
-    # def get_train_dataloader(self):
-
-    #     def pad_collate_fn(self, batch):
-    #         lens = np.array([len(item["input_ids"]) for item in batch])
-
-    #         cumsum_lens = np.cumsum(lens)
-    #         valid_up_to = int((cumsum_lens < MAX_BATCH_LEN).sum())
-
-    #         batch = batch[:valid_up_to]
-    #         position_ids = []
-    #         for idx in range(len(batch)):
-    #             position_ids += list(range(len(batch[idx]['input_ids'])))
-    #             batch[idx]['labels'][0] = -100
-    #         position_ids = torch.tensor(position_ids, dtype=torch.long).unsqueeze(0)
-    #         input_ids = torch.cat([x['input_ids'] for x in batch]).unsqueeze(0)
-    #         labels = torch.cat([x['labels'] for x in batch]).unsqueeze(0)
-
-    #         num_loss_counted_tokens = sum(
-    #             [(x["labels"] != -100).sum().item() for x in batch]
-    #         )
-
-    #         d = {
-    #             "input_ids": input_ids,
-    #             "labels": labels,
-    #             "position_ids": position_ids,
-    #             # "num_loss_counted_tokens": num_loss_counted_tokens,
-    #         }
-    #         if PER_TOKEN_LOSS:
-    #             d["num_loss_counted_tokens"] = num_loss_counted_tokens
-
-    #         return d
-
-    #     # train_loader.collate_fn = MethodType(collate_fn, train_loader)
-    #     train_loader.collate_fn = MethodType(pad_collate_fn, train_loader)
-    #     self.accelerator.even_batches = False
-    #     # return self.accelerator.prepare(train_loader)
-    #     return train_loader
-
-    from types import MethodType
-    from torch.distributed import ReduceOp, all_reduce
-    # trainer.get_train_dataloader = MethodType(get_train_dataloader, trainer)
-
-    if fast_attention_config.loss_config.token_averaged_loss:
-
-        print ("USING PER TOKEN LOSS!")
-
-        # replace this with accelerate backward and try to update the loss
-        # number from the tensor pointer inside
-        _old_compute_loss = trainer.compute_loss
-        def compute_loss(self, model, inputs, return_outputs=False):
-            n = torch.distributed.get_world_size()
-            r = torch.distributed.get_rank()
-            num_loss_counted_tokens = inputs.pop("num_loss_counted_tokens")
-
-            loss = _old_compute_loss(model, inputs, return_outputs)
-
-            V = torch.zeros(1, dtype=torch.float32).to(r)
-            V[0] = num_loss_counted_tokens
-            all_reduce(V, op=ReduceOp.SUM)
-            scaling = n * num_loss_counted_tokens / V[0]
-            del V
-
-            # torch.distributed.breakpoint()
-            # scaling = next(train_loader.batch_sampler.scalings)
-            return loss * scaling
-
-        trainer.compute_loss = MethodType(compute_loss, trainer)
-    else:
-        print ('USING HF PER EXAMPLE LOSS!')
 
     # # patch this one the model side, but may not be needed with 
     # # RD fix

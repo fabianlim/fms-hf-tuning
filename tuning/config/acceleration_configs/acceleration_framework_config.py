@@ -190,6 +190,8 @@ class AccelerationFrameworkConfig:
         return config
 
     def get_framework(self):
+        if self.is_empty():
+            return
 
         if is_fms_accelerate_available():
 
@@ -204,14 +206,13 @@ class AccelerationFrameworkConfig:
                 self.to_yaml(f.name)
                 return AccelerationFramework(f.name)
         else:
-            if not self.is_empty():
-                raise ValueError(
-                    "No acceleration framework package found. To use, first "
-                    "ensure that 'pip install -e.[fms-accel]' is done first to "
-                    "obtain the acceleration framework dependency. Additional "
-                    "acceleration plugins make be required depending on the requsted "
-                    "acceleration. See README.md for instructions."
-                )
+            raise ValueError(
+                "No acceleration framework package found. To use, first "
+                "ensure that 'pip install -e.[fms-accel]' is done first to "
+                "obtain the acceleration framework dependency. Additional "
+                "acceleration plugins make be required depending on the requsted "
+                "acceleration. See README.md for instructions."
+            )
 
     def is_empty(self):
         "check if the configuration is empty"
