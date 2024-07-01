@@ -38,6 +38,10 @@ class ModelArguments:
         metadata={"help": "Use Flash attention v2 from transformers, default is True"},
     )
     torch_dtype: Optional[Union[torch.dtype, str]] = torch.bfloat16
+    tokenizer_path: str = field(
+        default=None,
+        metadata={"help": "Path to a tokenizer if needed."},
+    )
 
 
 @dataclass
@@ -71,6 +75,10 @@ class DataArguments:
                          Either the dataset_text_field \
                          or data_formatter_template needs to be supplied."
         },
+    )
+    pretokenized_data: bool = field(
+        default=False,
+        metadata={"help": "Set to true if data is already tokenized. Still requires tokenizer if there are special tokens."},
     )
 
 

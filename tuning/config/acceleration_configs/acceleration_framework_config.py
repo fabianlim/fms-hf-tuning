@@ -23,6 +23,7 @@ import yaml
 # Local
 from .fused_ops_and_kernels import FastKernelsConfig, FusedLoraConfig
 from .quantized_lora_config import AutoGPTQLoraConfig, BNBQLoraConfig
+from .fast_attention_config import MultipackConfig, LossConfig ,PaddingFree
 from tuning.utils.import_utils import is_fms_accelerate_available
 
 if is_fms_accelerate_available():
@@ -98,6 +99,33 @@ class AccelerationFrameworkConfig:
         ),
     ] = None
 
+    multipack: Annotated[
+        MultipackConfig,
+        ConfigAnnotation(
+            path="training.fast_attention",
+            experimental=True,
+            required_packages=["attn"],
+        ),
+    ] = None
+
+    loss: Annotated[
+        LossConfig,
+        ConfigAnnotation(
+            path="training.fast_attention",
+            experimental=True,
+            required_packages=["attn"],
+        ),
+    ] = None
+
+    padding_free: Annotated[
+        PaddingFree,
+        ConfigAnnotation(
+            path="training.fast_attention",
+            experimental=True,
+            required_packages=["attn"],
+        ),
+    ] = None
+
     @staticmethod
     def from_dataclasses(*dataclasses: Type):
         "Convert one or many FMS config dataclasses to a monolithic AccelerationConfig"
@@ -162,6 +190,8 @@ class AccelerationFrameworkConfig:
         return config
 
     def get_framework(self):
+        if self.is_empty():
+            return
 
         if is_fms_accelerate_available():
 
@@ -176,14 +206,13 @@ class AccelerationFrameworkConfig:
                 self.to_yaml(f.name)
                 return AccelerationFramework(f.name)
         else:
-            if not self.is_empty():
-                raise ValueError(
-                    "No acceleration framework package found. To use, first "
-                    "ensure that 'pip install -e.[fms-accel]' is done first to "
-                    "obtain the acceleration framework dependency. Additional "
-                    "acceleration plugins make be required depending on the requsted "
-                    "acceleration. See README.md for instructions."
-                )
+            raise ValueError(
+                "No acceleration framework package found. To use, first "
+                "ensure that 'pip install -e.[fms-accel]' is done first to "
+                "obtain the acceleration framework dependency. Additional "
+                "acceleration plugins make be required depending on the requsted "
+                "acceleration. See README.md for instructions."
+            )
 
     def is_empty(self):
         "check if the configuration is empty"
