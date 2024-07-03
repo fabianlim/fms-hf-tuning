@@ -175,7 +175,7 @@ def train(
     from instructlab.training.utils import retrieve_chat_template
     from instructlab.training.token_dataset import setup_dataset
     CHAT_TEMPLATE, SPECIAL_TOKENS = retrieve_chat_template(
-        "/app/training/src/instructlab/training/chat_templates/ibm_generic_tmpl.py"
+        "/workspace/training/src/instructlab/training/chat_templates/ibm_generic_tmpl.py"
     )
     tokenizer = setup_tokenizer(model_args.model_name_or_path, SPECIAL_TOKENS, CHAT_TEMPLATE)
     # TODO: Move these to a config as well
@@ -383,18 +383,22 @@ def train(
         dataset_kwargs={'skip_prepare_dataset':True},
     )
     import numpy as np
+    import accelerate
 
-    from torch.distributed.fsdp import MixedPrecision
+    # from torch.distributed.fsdp import MixedPrecision
 
-    trainer.accelerator.state.fsdp_plugin.set_auto_wrap_policy(model)
-    trainer.accelerator.state.fsdp_plugin.mixed_precision_policy = MixedPrecision(
-        param_dtype=torch.bfloat16,
-        reduce_dtype=torch.bfloat16,
-        buffer_dtype=torch.bfloat16,
-    )
+    # trainer.accelerator.state.fsdp_plugin.set_auto_wrap_policy(model)
+    # trainer.accelerator.state.fsdp_plugin.mixed_precision_policy = MixedPrecision(
+    #     param_dtype=torch.bfloat16,
+    #     reduce_dtype=torch.bfloat16,
+    #     buffer_dtype=torch.bfloat16,
+    # )
     # use FSDP checkpointing
     trainer.accelerator.state.fsdp_plugin.activation_checkpointing = train_args.gradient_checkpointing
-    trainer.accelerator.native_amp = False # defer to FSDP AMP
+    if peft_config is None:
+        # somehow we need this for the low precision kernels
+        # during QLORA
+        trainer.accelerator.native_amp = False # defer to FSDP AMP
 
     if padding_free_config.loss_config is None:
         raise NotImplementedError
