@@ -362,6 +362,8 @@ def train(
             "Validation dataset length is %s", len(formatted_validation_dataset)
         )
 
+    used_peft = peft_config is not None
+
     if framework is not None and framework.requires_agumentation:
         model, (peft_config,) = framework.augmentation(
             model, train_args, modifiable_args=(peft_config,)
@@ -395,7 +397,7 @@ def train(
     # )
     # use FSDP checkpointing
     trainer.accelerator.state.fsdp_plugin.activation_checkpointing = train_args.gradient_checkpointing
-    if peft_config is None:
+    if not used_peft:
         # somehow we need this for the low precision kernels
         # during QLORA
         trainer.accelerator.native_amp = False # defer to FSDP AMP
