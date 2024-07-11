@@ -23,7 +23,7 @@ import yaml
 # Local
 from .fused_ops_and_kernels import FastKernelsConfig, FusedLoraConfig
 from .quantized_lora_config import AutoGPTQLoraConfig, BNBQLoraConfig
-from .fast_attention_config import MultipackConfig, LossConfig ,PaddingFree
+from .fast_attention_config import MultipackConfig, LossAcrossGPUsConfig ,PaddingFree
 from tuning.utils.import_utils import is_fms_accelerate_available
 
 if is_fms_accelerate_available():
@@ -102,17 +102,18 @@ class AccelerationFrameworkConfig:
     multipack: Annotated[
         MultipackConfig,
         ConfigAnnotation(
-            path="training.fast_attention",
+            path="training.dataloader",
             experimental=True,
             required_packages=["attn"],
         ),
     ] = None
 
-    loss: Annotated[
-        LossConfig,
+    loss_across_gpus: Annotated[
+        LossAcrossGPUsConfig,
         ConfigAnnotation(
-            path="training.fast_attention",
+            path="training.loss",
             experimental=True,
+            key="across_gpus",
             required_packages=["attn"],
         ),
     ] = None
@@ -120,7 +121,7 @@ class AccelerationFrameworkConfig:
     padding_free: Annotated[
         PaddingFree,
         ConfigAnnotation(
-            path="training.fast_attention",
+            path="training.attention",
             experimental=True,
             required_packages=["attn"],
         ),

@@ -13,7 +13,7 @@ from .utils import (
 @dataclass
 class MultipackConfig:
 
-    # 
+    # effective batch size of the packing
     effective_batch_size: int = 3840
 
     # aka max_batch_len
@@ -22,27 +22,36 @@ class MultipackConfig:
 
 @parsable_dataclass
 @dataclass
-class LossConfig:
+class LossAcrossGPUsConfig:
 
-    # just put here first, 
-    token_averaged_loss: bool = True
+    # how the losses are reduced
+    reduction: str = 'mean'
+
+    # resolution in which losses are reduced. 
+    # - currently this plugin only supports by token reduction
+    resolution: str = 'token'
 
 @parsable_dataclass
 @dataclass
 class PaddingFree:
-    # just put here first, 
-    method: str = "huggingface"
+
+    # the method we use to enable padding free on the models
+    # - the huggingface injected method is change the varlen function
+    #   this allows to access padding free methods before the transformers
+    #   0.43 on huggingface models
+    method: str = "huggingface-injected"
 
 @dataclass
 class FastAttentionConfig:
 
+    # to access the multipack dataloader
+    multipack: MultipackConfig = None
+
+    # for activating padding-free methods
     padding_free: PaddingFree = None
 
-    # to use auto_gptq 4bit lora base layers
-    loss_config: LossConfig = None
-
-    # to use auto_gptq 4bit lora base layers
-    multipack: MultipackConfig = None
+    # for different flavours of loss reduction across GPUs
+    loss_across_gpus: LossAcrossGPUsConfig = None
 
     def __post_init__(self):
         # ensure nested dataclasses initialized
