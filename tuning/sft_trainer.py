@@ -307,9 +307,6 @@ def train(
             formatted_train_dataset = json_dataset["train"].map(format_dataset)
     logger.info("Training dataset length is %s", len(formatted_train_dataset))
 
-    # HACK
-    train_args.__dict__['data_path'] = data_args.training_data_path
-
     formatted_validation_dataset = None
     if data_args.validation_data_path:
         if data_args.data_formatter_template:
