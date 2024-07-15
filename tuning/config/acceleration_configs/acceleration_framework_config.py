@@ -23,7 +23,10 @@ import yaml
 # Local
 from .fused_ops_and_kernels import FastKernelsConfig, FusedLoraConfig
 from .quantized_lora_config import AutoGPTQLoraConfig, BNBQLoraConfig
-from .fast_attention_config import MultipackConfig, LossAcrossGPUsConfig ,PaddingFree
+from .fast_attention_config import (
+    MultipackConfig, LossAcrossGPUsConfig,
+    PaddingFreeConfig, MLPDropoutConfig
+)
 from tuning.utils.import_utils import is_fms_accelerate_available
 
 if is_fms_accelerate_available():
@@ -119,9 +122,19 @@ class AccelerationFrameworkConfig:
     ] = None
 
     padding_free: Annotated[
-        PaddingFree,
+        PaddingFreeConfig,
         ConfigAnnotation(
             path="training.attention",
+            experimental=True,
+            required_packages=["attn"],
+        ),
+    ] = None
+
+    mlp_dropout: Annotated[
+        MLPDropoutConfig,
+        ConfigAnnotation(
+            path="training.mlp",
+            key='dropout',
             experimental=True,
             required_packages=["attn"],
         ),

@@ -33,13 +33,28 @@ class LossAcrossGPUsConfig:
 
 @parsable_dataclass
 @dataclass
-class PaddingFree:
+class PaddingFreeConfig:
 
     # the method we use to enable padding free on the models
     # - the huggingface injected method is change the varlen function
     #   this allows to access padding free methods before the transformers
     #   0.43 on huggingface models
     method: str = "huggingface-injected"
+
+    dropout_method: str = 'none'
+
+    dropout_value: float = .0
+
+@parsable_dataclass
+@dataclass
+class MLPDropoutConfig:
+
+    # this plugin allows to modify the MLP behaviors, e.g. 
+    # adding extra dropouts
+    method: str = "residual"
+
+    # percentage of the dropout
+    value: float = 0.1
 
 @dataclass
 class FastAttentionConfig:
@@ -48,10 +63,13 @@ class FastAttentionConfig:
     multipack: MultipackConfig = None
 
     # for activating padding-free methods
-    padding_free: PaddingFree = None
+    padding_free: PaddingFreeConfig = None
 
     # for different flavours of loss reduction across GPUs
     loss_across_gpus: LossAcrossGPUsConfig = None
+
+    # for mlp modifications
+    mlp_dropout: MLPDropoutConfig = None
 
     def __post_init__(self):
         # ensure nested dataclasses initialized
