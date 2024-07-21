@@ -25,7 +25,7 @@ from .fused_ops_and_kernels import FastKernelsConfig, FusedLoraConfig
 from .quantized_lora_config import AutoGPTQLoraConfig, BNBQLoraConfig
 from .fast_attention_config import (
     MultipackConfig, LossAcrossGPUsConfig,
-    PaddingFreeConfig, MLPDropoutConfig
+    PaddingFreeConfig, MLPDropoutConfig, EmbeddingDropoutConfig
 )
 from tuning.utils.import_utils import is_fms_accelerate_available
 
@@ -134,6 +134,16 @@ class AccelerationFrameworkConfig:
         MLPDropoutConfig,
         ConfigAnnotation(
             path="training.mlp",
+            key='dropout',
+            experimental=True,
+            required_packages=["attn"],
+        ),
+    ] = None
+
+    emb_dropout: Annotated[
+        EmbeddingDropoutConfig,
+        ConfigAnnotation(
+            path="training.embedding",
             key='dropout',
             experimental=True,
             required_packages=["attn"],

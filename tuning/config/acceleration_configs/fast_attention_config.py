@@ -56,6 +56,17 @@ class MLPDropoutConfig:
     # percentage of the dropout
     value: float = 0.1
 
+@parsable_dataclass
+@dataclass
+class EmbeddingDropoutConfig:
+
+    # this plugin allows to modify the Embedding behaviors, e.g. 
+    # adding extra dropouts
+    method: str = "inputs"
+
+    # percentage of the dropout
+    value: float = 0.1
+
 @dataclass
 class FastAttentionConfig:
 
@@ -70,6 +81,9 @@ class FastAttentionConfig:
 
     # for mlp modifications
     mlp_dropout: MLPDropoutConfig = None
+
+    # for embedding modifications
+    emb_dropout: EmbeddingDropoutConfig = None
 
     def __post_init__(self):
         # ensure nested dataclasses initialized
